@@ -16,3 +16,9 @@ coverage/**/*
 .claude/
 .codex/
 src/scripts/activity-labels/results/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
