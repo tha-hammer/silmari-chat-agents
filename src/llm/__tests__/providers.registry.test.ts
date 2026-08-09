@@ -179,8 +179,10 @@ describe('chat model registry', () => {
         clientOptions,
       });
 
-      expect(model).toBeInstanceOf(RecordingChatBAML);
-      expect((model as RecordingChatBAML).receivedOptions).toBe(clientOptions);
+      if (!(model instanceof RecordingChatBAML)) {
+        throw new Error('initializeModel did not return the registered class');
+      }
+      expect(model.receivedOptions).toBe(clientOptions);
     });
 
     it('does not bind tools when the tool list is empty', () => {
