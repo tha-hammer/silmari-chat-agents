@@ -22,6 +22,7 @@ import type { Runnable } from '@langchain/core/runnables';
 import type { OpenAI as OpenAIClient } from 'openai';
 import type { ChatXAIInput } from '@langchain/xai';
 import type { ChatOpenRouterCallOptions } from '@/llm/openrouter';
+import type { BamlClientOptions } from '@/llm/baml/types';
 import type { PromptCacheTtl } from '@/messages/cache';
 import {
   AzureChatOpenAI,
@@ -34,6 +35,7 @@ import { CustomChatGoogleGenerativeAI } from '@/llm/google';
 import { CustomChatBedrockConverse } from '@/llm/bedrock';
 import { CustomAnthropic } from '@/llm/anthropic';
 import { ChatOpenRouter } from '@/llm/openrouter';
+import { ChatBAML } from '@/llm/baml/ChatBAML';
 import { ChatVertexAI } from '@/llm/vertexai';
 import { Providers } from '@/common';
 
@@ -147,7 +149,8 @@ export type ClientOptions =
   | BedrockConverseClientOptions
   | GoogleClientOptions
   | DeepSeekClientOptions
-  | XAIClientOptions;
+  | XAIClientOptions
+  | BamlClientOptions;
 
 export type SharedLLMConfig = {
   provider: Providers;
@@ -180,6 +183,7 @@ export type ProviderOptionsMap = {
   [Providers.BEDROCK]: BedrockAnthropicClientOptions;
   [Providers.XAI]: XAIClientOptions;
   [Providers.MOONSHOT]: OpenAIClientOptions;
+  [Providers.BAML]: BamlClientOptions;
 };
 
 export type ChatModelMap = {
@@ -195,6 +199,7 @@ export type ChatModelMap = {
   [Providers.BEDROCK]: CustomChatBedrockConverse;
   [Providers.GOOGLE]: CustomChatGoogleGenerativeAI;
   [Providers.MOONSHOT]: ChatMoonshot;
+  [Providers.BAML]: ChatBAML;
 };
 
 export type ChatModelConstructorMap = {
