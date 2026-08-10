@@ -47,8 +47,18 @@ describe('getContextOverflowInfo — captured provider signatures', () => {
       Providers.MOONSHOT,
       Providers.MISTRALAI,
     ]);
+    /**
+     * BAML ships no client here at all: it calls a host-supplied port, so an
+     * overflow arrives as whatever the host's underlying provider threw. There
+     * is no BAML-shaped signature to capture.
+     */
+    const noClientOfItsOwn = new Set([Providers.BAML]);
     for (const provider of Object.values(Providers)) {
-      expect(covered.has(provider) || byOpenAIClient.has(provider)).toBe(true);
+      expect(
+        covered.has(provider) ||
+          byOpenAIClient.has(provider) ||
+          noClientOfItsOwn.has(provider)
+      ).toBe(true);
     }
   });
 });

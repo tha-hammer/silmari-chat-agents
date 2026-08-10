@@ -91,7 +91,7 @@ export function toJsonValue(value: unknown): JsonValue {
   return toJsonValueInternal(value, new WeakSet<object>());
 }
 
-function toJsonObject(value: unknown): JsonObject | undefined {
+export function toJsonObject(value: unknown): JsonObject | undefined {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
   }

@@ -14,6 +14,11 @@
       "require": "./dist/cjs/main.cjs",
       "types": "./dist/types/index.d.ts"
     },
+    "./baml": {
+      "import": "./dist/esm/llm/baml/index.mjs",
+      "require": "./dist/cjs/llm/baml/index.cjs",
+      "types": "./dist/types/llm/baml/index.d.ts"
+    },
     "./openai": {
       "import": "./dist/esm/openai/index.mjs",
       "require": "./dist/cjs/openai/index.cjs",
@@ -77,6 +82,9 @@
   },
   "typesVersions": {
     "*": {
+      "baml": [
+        "dist/types/llm/baml/index.d.ts"
+      ],
       "langchain": [
         "dist/types/langchain/index.d.ts"
       ],
@@ -117,11 +125,12 @@
   ],
   "scripts": {
     "prepare": "node husky-setup.js",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build && npm run test:package",
     "build": "tsdown && tsc -p tsconfig.build.json",
     "build:dev": "tsdown",
     "check:circular-deps": "node config/circular-deps.mjs",
     "test:circular-deps": "node --test config/circular-deps.test.mjs",
+    "test:package": "node test/package/run.mjs",
     "sort-imports": "node scripts/sort-imports.ts",
     "sort-imports:check": "node scripts/sort-imports.ts --check",
     "start": "node dist/esm/main.js",

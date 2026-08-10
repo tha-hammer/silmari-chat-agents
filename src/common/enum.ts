@@ -97,6 +97,7 @@ export enum Providers {
   OPENROUTER = 'openrouter',
   XAI = 'xai',
   MOONSHOT = 'moonshot',
+  BAML = 'baml',
 }
 
 export enum GraphNodeKeys {
