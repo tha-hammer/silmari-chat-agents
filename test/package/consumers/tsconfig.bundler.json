@@ -1,0 +1,15 @@
+{
+  "comment": "B19 — resolves @librechat/agents/baml types via exports.types under bundler resolution (the library's own moduleResolution, and the mode Vite/webpack/esbuild/Bun/Next use).",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": []
+  },
+  "files": ["type-consumer.ts"]
+}

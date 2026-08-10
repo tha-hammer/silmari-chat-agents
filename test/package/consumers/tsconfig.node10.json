@@ -1,0 +1,15 @@
+{
+  "comment": "B19 — resolves @librechat/agents/baml types via typesVersions (classic resolution).",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": []
+  },
+  "files": ["type-consumer.ts"]
+}

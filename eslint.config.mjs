@@ -7,6 +7,7 @@ import js from "@eslint/js";
 
 export default defineConfig([globalIgnores([
     "dist/**/*",
+    "test/package/**",
     "config/**/*",
     "routes/**/*",
     "**/*.js",
