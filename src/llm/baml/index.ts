@@ -10,4 +10,5 @@ import { Providers } from '@/common';
 registerChatModel(Providers.BAML, ChatBAML);
 
 export { ChatBAML };
+export * from './errors';
 export * from './types';
