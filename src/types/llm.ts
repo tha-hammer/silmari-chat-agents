@@ -21,6 +21,7 @@ import type { AnthropicInput } from '@langchain/anthropic';
 import type { Runnable } from '@langchain/core/runnables';
 import type { OpenAI as OpenAIClient } from 'openai';
 import type { ChatXAIInput } from '@langchain/xai';
+import type { ClaudeAgentSDKClientOptions } from '@/llm/claudeAgentSdk/types';
 import type { ChatOpenRouterCallOptions } from '@/llm/openrouter';
 import type { BamlClientOptions } from '@/llm/baml/types';
 import type { PromptCacheTtl } from '@/messages/cache';
@@ -31,6 +32,7 @@ import {
   ChatOpenAI,
   ChatXAI,
 } from '@/llm/openai';
+import { ChatClaudeAgentSDK } from '@/llm/claudeAgentSdk/ChatClaudeAgentSDK';
 import { CustomChatGoogleGenerativeAI } from '@/llm/google';
 import { CustomChatBedrockConverse } from '@/llm/bedrock';
 import { CustomAnthropic } from '@/llm/anthropic';
@@ -150,7 +152,8 @@ export type ClientOptions =
   | GoogleClientOptions
   | DeepSeekClientOptions
   | XAIClientOptions
-  | BamlClientOptions;
+  | BamlClientOptions
+  | ClaudeAgentSDKClientOptions;
 
 export type SharedLLMConfig = {
   provider: Providers;
@@ -184,6 +187,7 @@ export type ProviderOptionsMap = {
   [Providers.XAI]: XAIClientOptions;
   [Providers.MOONSHOT]: OpenAIClientOptions;
   [Providers.BAML]: BamlClientOptions;
+  [Providers.CLAUDE_AGENT_SDK]: ClaudeAgentSDKClientOptions;
 };
 
 export type ChatModelMap = {
@@ -200,6 +204,7 @@ export type ChatModelMap = {
   [Providers.GOOGLE]: CustomChatGoogleGenerativeAI;
   [Providers.MOONSHOT]: ChatMoonshot;
   [Providers.BAML]: ChatBAML;
+  [Providers.CLAUDE_AGENT_SDK]: ChatClaudeAgentSDK;
 };
 
 export type ChatModelConstructorMap = {

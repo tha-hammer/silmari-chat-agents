@@ -27,7 +27,7 @@ export function toJsonSchema(
         ? zodSchema.describe(description)
         : schema;
     return zodToJsonSchema(
-      described as Parameters<typeof zodToJsonSchema>[0],
+      described as unknown as Parameters<typeof zodToJsonSchema>[0],
       name ?? ''
     );
   }

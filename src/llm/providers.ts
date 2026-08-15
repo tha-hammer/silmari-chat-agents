@@ -11,6 +11,7 @@ import {
   ChatOpenAI,
   ChatXAI,
 } from '@/llm/openai';
+import { ChatClaudeAgentSDK } from '@/llm/claudeAgentSdk/ChatClaudeAgentSDK';
 import { CustomChatGoogleGenerativeAI } from '@/llm/google';
 import { CustomChatBedrockConverse } from '@/llm/bedrock';
 import { CustomChatMistralAI } from '@/llm/mistral';
@@ -33,8 +34,11 @@ export const llmProviders: Partial<ChatModelConstructorMap> = {
   // [Providers.ANTHROPIC]: ChatAnthropic,
   [Providers.GOOGLE]: CustomChatGoogleGenerativeAI,
   [Providers.MOONSHOT]: ChatMoonshot,
+  [Providers.CLAUDE_AGENT_SDK]: ChatClaudeAgentSDK,
 };
 
+// ChatClaudeAgentSDK never emits `tool_calls` (B10) — its streamed content has
+// no tool-use chunks to reconcile, so it needs no entry here.
 export const manualToolStreamProviders = new Set<Providers | string>([
   Providers.ANTHROPIC,
   Providers.BEDROCK,

@@ -51,8 +51,17 @@ describe('getContextOverflowInfo — captured provider signatures', () => {
      * BAML ships no client here at all: it calls a host-supplied port, so an
      * overflow arrives as whatever the host's underlying provider threw. There
      * is no BAML-shaped signature to capture.
+     *
+     * The Claude Agent SDK provider spawns a `claude` CLI subprocess instead of
+     * calling an HTTP client this utility would recognize — an overflow-like
+     * condition surfaces as a typed `ClaudeAgentSDKResultError` (`subtype:
+     * 'error_max_turns'` etc.), not one of the raw API-client error shapes this
+     * utility parses. There is no HTTP-client signature to capture either.
      */
-    const noClientOfItsOwn = new Set([Providers.BAML]);
+    const noClientOfItsOwn = new Set([
+      Providers.BAML,
+      Providers.CLAUDE_AGENT_SDK,
+    ]);
     for (const provider of Object.values(Providers)) {
       expect(
         covered.has(provider) ||

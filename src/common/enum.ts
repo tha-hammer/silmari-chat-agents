@@ -98,6 +98,7 @@ export enum Providers {
   XAI = 'xai',
   MOONSHOT = 'moonshot',
   BAML = 'baml',
+  CLAUDE_AGENT_SDK = 'claudeAgentSdk',
 }
 
 export enum GraphNodeKeys {

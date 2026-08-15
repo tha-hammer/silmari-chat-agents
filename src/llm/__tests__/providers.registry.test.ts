@@ -146,9 +146,9 @@ describe('chat model registry', () => {
     );
   });
 
-  describe('B3 — all twelve built-ins undisturbed', () => {
-    it('enumerates twelve built-in providers from the enum', () => {
-      expect(BUILT_IN_PROVIDERS).toHaveLength(12);
+  describe('B3 — all thirteen built-ins undisturbed', () => {
+    it('enumerates thirteen built-in providers from the enum', () => {
+      expect(BUILT_IN_PROVIDERS).toHaveLength(13);
       expect(BUILT_IN_PROVIDERS).toContain(Providers.MISTRAL);
       expect(BUILT_IN_PROVIDERS).toContain(Providers.MISTRALAI);
     });
