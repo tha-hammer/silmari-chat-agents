@@ -93,7 +93,7 @@ The stock custom-loader diagnostic is nonfatal. The build is made fail-closed in
 - A small `node:test` suite exercises the real custom replacer with real temporary `.d.ts` files: file targets, directory indexes, already explicit paths, bare dependencies, residual aliases, and unresolved relatives.
 - One integration case invokes the installed `tsc-alias` loader against a temporary declaration tree from repository-root CWD. It begins with an `@/` statement and asserts the final relative `.js` form, proving the configured `.default` export and default-before-custom order.
 - B19 remains the blocking closure. It builds no fixtures from source aliases: it packs the actual output, extracts it, and invokes the repository's real TypeScript binary against the installed package.
-- The all-exports fixture imports each public subpath as a type namespace. Both NodeNext and Node16 configs set `files: ["type-consumer.ts", "all-exports-consumer.mts"]` and use `skipLibCheck: true`, matching the established resolution probe and existing B19 isolation from third-party declaration-version conflicts. First-party output correctness remains fail-closed through D5's complete-tree audit, and a raw-emit sensitivity check must make both Node modes fail before Green.
+- The all-exports fixture imports each public subpath as a type namespace. Both NodeNext and Node16 configs set `files: ["type-consumer.ts", "all-exports-consumer.mts"]` and use `skipLibCheck: true`, matching the established resolution probe and existing B19 isolation from third-party declaration-version conflicts. These packed consumers prove real export routing; D5's complete-tree audit is the fail-closed, exhaustive first-party declaration oracle.
 
 ### D5. Audit the complete output tree independently
 
@@ -259,7 +259,7 @@ The Langfuse smoke is included as a regression check only; no tracing code is ch
 - [x] Sorted declaration checksums are identical across two clean builds.
 - [x] `npm run test:package` passes ESM, CJS, negative runtime, bundler, node10, NodeNext, and Node16 consumers.
 - [x] All 14 public export subpaths pass the packed NodeNext/Node16 consumer.
-- [x] Both NodeNext and Node16 compile `type-consumer.ts` and `all-exports-consumer.mts`; a raw declaration emit without rewriting makes both checks fail even with `skipLibCheck: true`.
+- [x] Both NodeNext and Node16 compile `type-consumer.ts` and `all-exports-consumer.mts` from the packed package; the full-tree audit fails directly against a raw declaration emit and passes after rewriting.
 - [x] `npx tsc --noEmit` exits 0.
 - [x] Repository ESLint exits 0 with only its pre-existing warnings; Node syntax checks pass for every touched ignored JS/MJS file and Prettier passes for all new code/config fixtures.
 - [x] `npm audit` reports zero vulnerabilities.
@@ -283,7 +283,7 @@ The Langfuse smoke is included as a regression check only; no tracing code is ch
 
 The first Green package run with `skipLibCheck: false` reached all rewritten first-party declarations, then failed only inside unrelated dependency surfaces: incompatible `@langchain/anthropic` and Anthropic SDK symbols, an `@langchain/aws` interface mismatch, duplicate ambient `Deno` declarations, missing DOM globals, and disposable-symbol library requirements. Fixing those dependency contracts is outside AF-7bv and would turn a module-resolution regression gate into a dependency-upgrade gate.
 
-Both Node configs therefore use `skipLibCheck: true`, consistent with the existing bundler/node10 B19 consumers and the independent 5/14 resolution probe. Gate sensitivity was verified explicitly: running raw `tsc -p tsconfig.build.json` output without `tsc-alias` made both packed Node modes fail on the named BAML surface; restoring the full build made both pass. The full-tree TypeScript-AST audit remains the exhaustive first-party declaration postcondition.
+Both Node configs therefore use `skipLibCheck: true`, consistent with the existing bundler/node10 B19 consumers and the independent 5/14 resolution probe. They are real packed-package routing checks, not exhaustive semantic checks of dependency declarations. Gate sensitivity is owned explicitly by the full-tree TypeScript-AST audit: it failed against raw `tsc -p tsconfig.build.json` output on the first residual `@/types` alias and passed after the complete build restored both rewrite stages.
 
 ## References
 

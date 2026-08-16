@@ -471,10 +471,10 @@ replaced by namespace-only imports.
 
 The Node configs isolate unrelated dependency declaration-version conflicts,
 matching the original 5/14 resolution probe and the existing B19 consumers.
-The combined gate remains sensitive to this defect: a raw declaration emit
-without the rewrite makes both Node modes fail through the named BAML fixture,
-while the independent full-tree AST audit—not `skipLibCheck` TypeScript—is the
-exhaustive oracle for every first-party specifier.
+The packed Node modes prove real export routing. The independent full-tree AST
+audit—not `skipLibCheck` TypeScript—is the exhaustive sensitivity oracle for
+every first-party specifier: it fails directly against a raw declaration emit
+and passes only after both rewrite stages complete.
 
 ## AF-sy8 named BAML dependency
 
