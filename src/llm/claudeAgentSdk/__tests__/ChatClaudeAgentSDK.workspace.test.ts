@@ -1,5 +1,7 @@
-import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { HumanMessage } from '@langchain/core/messages';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { describe, expect, it, jest } from '@jest/globals';
 import type { FakeQueryCall } from './fakeQuery';
 import { ClaudeAgentSDKSessionResumeError } from '@/llm/claudeAgentSdk/errors';
@@ -95,6 +97,38 @@ describe('B16 — multi-tenant isolation options apply when configured, and env 
 
     expect(calls[0].options?.settingSources).toBeUndefined();
     expect(calls[0].options?.env).toBeUndefined();
+  });
+
+  it('multiTenant unset: the CLAUDE_CONFIG_DIR the subprocess will actually inherit from process.env is created before query()', async () => {
+    // multiTenant: false sets no env override at all — the subprocess
+    // inherits process.env unmodified. If the deployment's own
+    // CLAUDE_CONFIG_DIR (or, absent that, $HOME/.claude — not exercised
+    // here to avoid touching the test runner's real home directory) was
+    // never created, session persistence silently fails the same way
+    // perTenantConfigDir's bug did, just via a different, un-overridden
+    // code path.
+    const tmpBase = mkdtempSync(join(tmpdir(), 'claude-config-dir-test-'));
+    const configDir = join(tmpBase, 'never-created-yet');
+    const originalEnv = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    try {
+      expect(existsSync(configDir)).toBe(false);
+      const calls: FakeQueryCall[] = [];
+      const queryFn = fakeQuery([[resultSuccess({ result: 'hi' })]], calls);
+      const model = new ChatClaudeAgentSDK({ cwd: '/tmp', queryFn });
+
+      await model.invoke([new HumanMessage('hi')]);
+
+      expect(calls[0].options?.env).toBeUndefined();
+      expect(existsSync(configDir)).toBe(true);
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = originalEnv;
+      }
+      rmSync(tmpBase, { recursive: true, force: true });
+    }
   });
 });
 

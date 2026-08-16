@@ -1,7 +1,7 @@
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { tmpdir, homedir } from 'node:os';
 import { AIMessageChunk } from '@langchain/core/messages';
 import { ChatGenerationChunk } from '@langchain/core/outputs';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
@@ -166,6 +166,28 @@ function perTenantConfigDir(resolvedCwd: string): string {
   const dir = join(tmpdir(), 'claude-agent-sdk-tenants', digest.slice(0, 16));
   mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/**
+ * The `claude` CLI persists session transcripts under `CLAUDE_CONFIG_DIR`
+ * when set (the multi-tenant path above always sets it), and under
+ * `$HOME/.claude/` otherwise (`sdk.d.ts`'s own JSDoc: "Sessions will not be
+ * saved to ~/.claude/projects/..." names this as the default). Unlike
+ * `perTenantConfigDir`, this directory is never created by this provider's
+ * own env-override logic in the non-multi-tenant path, because that path
+ * deliberately sets no `env` at all — the subprocess inherits `process.env`
+ * unmodified, so a developer's own already-`claude login`-ed `~/.claude`
+ * keeps working exactly as it does outside this provider.
+ *
+ * That default is exactly the gap: a fresh container/host whose `$HOME` was
+ * never seeded by an interactive `claude login` has no `~/.claude` either,
+ * and the CLI does not create it — so this ensures whichever directory the
+ * subprocess is ABOUT to use (env override or CLI default) actually exists,
+ * regardless of `multiTenant`, before every `query()` call.
+ */
+function ensureClaudeConfigDirExists(): void {
+  const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+  mkdirSync(dir, { recursive: true });
 }
 
 /**
@@ -366,6 +388,7 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
       this.postToolUseHook == null
         ? undefined
         : toSdkPostToolUseHook(this.postToolUseHook, hookContext);
+    ensureClaudeConfigDirExists();
     const queryFn = await this.resolveQueryFn();
     const query = queryFn({
       prompt,
