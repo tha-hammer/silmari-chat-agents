@@ -8,6 +8,14 @@
     "emitDeclarationOnly": true,
     "noEmit": false
   },
+  "tsc-alias": {
+    "replacers": {
+      "declaration-imports": {
+        "enabled": true,
+        "file": "./config/declaration-import-replacer.cjs"
+      }
+    }
+  },
   "include": ["src/**/*"],
   "exclude": [
     "**/*.test.ts",
