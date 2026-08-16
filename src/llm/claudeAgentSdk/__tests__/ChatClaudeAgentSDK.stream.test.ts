@@ -11,9 +11,47 @@ import {
   toolResultParam,
   unknownMessage,
 } from './fixtures';
+import {
+  usageMetadataFromResult,
+  responseMetadataFromResult,
+} from '@/llm/claudeAgentSdk/usage';
 import { ChatClaudeAgentSDK } from '@/llm/claudeAgentSdk/ChatClaudeAgentSDK';
 import { ClaudeAgentSDKResultError } from '@/llm/claudeAgentSdk/errors';
-import { fakeQuery } from './fakeQuery';
+import { fakeQueryFromGenerator, fakeQuery } from './fakeQuery';
+
+const MAIN_MODEL = 'claude-sonnet-4-5';
+const CANONICAL_MAIN_MODEL = 'claude-sonnet-4-5-20250929';
+const SECONDARY_MODEL = 'claude-haiku-4-5';
+
+type ModelUsageFixture = Parameters<
+  typeof resultSuccess
+>[0]['modelUsage'] extends Record<string, infer U> | undefined
+  ? U
+  : never;
+
+function modelUsage(
+  fields: Partial<ModelUsageFixture> = {}
+): ModelUsageFixture {
+  return {
+    inputTokens: 10,
+    outputTokens: 5,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    webSearchRequests: 0,
+    costUSD: 0,
+    contextWindow: 200_000,
+    maxOutputTokens: 8_192,
+    ...fields,
+  };
+}
+
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolvePromise = (): void => {};
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
 
 async function collectChunks(
   model: ChatClaudeAgentSDK
@@ -87,12 +125,6 @@ describe('B6 — streaming text/thinking content reuses the existing Anthropic c
   });
 });
 
-type ModelUsageFixture = Parameters<
-  typeof resultSuccess
->[0]['modelUsage'] extends Record<string, infer U> | undefined
-  ? U
-  : never;
-
 describe('B7 — usage_metadata is derived from modelUsage, never usage [part of Closure A]', () => {
   it.each([
     {
@@ -127,7 +159,7 @@ describe('B7 — usage_metadata is derived from modelUsage, never usage [part of
       expected: undefined,
     },
     {
-      label: 'modelUsage absent',
+      label: 'modelUsage omitted from fixture input',
       modelUsage: undefined as Record<string, ModelUsageFixture> | undefined,
       expected: undefined,
     },
@@ -166,6 +198,303 @@ describe('B7 — usage_metadata is derived from modelUsage, never usage [part of
     expect(result.response_metadata.num_turns).toBe(3);
     expect(result.response_metadata.total_cost_usd).toBe(0.5);
   });
+
+  it('responseMetadataFromResult returns selected model limits with every legacy field', () => {
+    const result = resultSuccess({
+      result: 'hi',
+      session_id: 's42',
+      num_turns: 3,
+      total_cost_usd: 0.5,
+      modelUsage: {
+        [MAIN_MODEL]: modelUsage({ canonicalModel: CANONICAL_MAIN_MODEL }),
+      },
+    });
+
+    expect(responseMetadataFromResult(result, MAIN_MODEL)).toEqual({
+      session_id: 's42',
+      num_turns: 3,
+      total_cost_usd: 0.5,
+      model: CANONICAL_MAIN_MODEL,
+      canonical_model: CANONICAL_MAIN_MODEL,
+      context_window: 200_000,
+      max_output_tokens: 8_192,
+    });
+  });
+
+  it('selects the main-loop record without changing aggregate token totals', async () => {
+    const script = [
+      assistantMessage({ content: [textBlock('hi')], model: MAIN_MODEL }),
+      resultSuccess({
+        result: '',
+        modelUsage: {
+          [SECONDARY_MODEL]: modelUsage({
+            inputTokens: 3,
+            outputTokens: 2,
+            contextWindow: 100_000,
+            maxOutputTokens: 4_096,
+          }),
+          [MAIN_MODEL]: modelUsage({ canonicalModel: CANONICAL_MAIN_MODEL }),
+        },
+      }),
+    ];
+    const streamed = await collectChunks(
+      new ChatClaudeAgentSDK({ cwd: '/tmp', queryFn: fakeQuery([script]) })
+    );
+    const terminal = streamed[streamed.length - 1];
+    const firstContentChunk = streamed[0];
+    const reduced = finalOf(streamed);
+    const invoked = await new ChatClaudeAgentSDK({
+      cwd: '/tmp',
+      queryFn: fakeQuery([script]),
+    }).invoke([new HumanMessage('hi')]);
+
+    const expectedUsage = {
+      input_tokens: 13,
+      output_tokens: 7,
+      total_tokens: 20,
+      canonical_model: CANONICAL_MAIN_MODEL,
+      context_window: 200_000,
+      max_output_tokens: 8_192,
+    };
+    const expectedResponse = {
+      model: CANONICAL_MAIN_MODEL,
+      canonical_model: CANONICAL_MAIN_MODEL,
+      context_window: 200_000,
+      max_output_tokens: 8_192,
+    };
+
+    expect(terminal.usage_metadata).toMatchObject(expectedUsage);
+    expect(reduced.usage_metadata).toMatchObject(expectedUsage);
+    expect(invoked.usage_metadata).toMatchObject(expectedUsage);
+    expect(invoked.usage_metadata).not.toHaveProperty('model');
+    expect(terminal.response_metadata).toMatchObject(expectedResponse);
+    expect(reduced.response_metadata).toMatchObject(expectedResponse);
+    expect(invoked.response_metadata).toMatchObject(expectedResponse);
+    expect(firstContentChunk.usage_metadata).toBeUndefined();
+  });
+
+  it('selects a unique canonical match when the raw record key differs', async () => {
+    const result = await new ChatClaudeAgentSDK({
+      cwd: '/tmp',
+      queryFn: fakeQuery([
+        [
+          assistantMessage({
+            content: [textBlock('hi')],
+            model: CANONICAL_MAIN_MODEL,
+          }),
+          resultSuccess({
+            result: '',
+            modelUsage: {
+              'provider-specific-alias': modelUsage({
+                canonicalModel: CANONICAL_MAIN_MODEL,
+              }),
+              [SECONDARY_MODEL]: modelUsage({ contextWindow: 100_000 }),
+            },
+          }),
+        ],
+      ]),
+    }).invoke([new HumanMessage('hi')]);
+
+    expect(result.response_metadata).toMatchObject({
+      model: CANONICAL_MAIN_MODEL,
+      canonical_model: CANONICAL_MAIN_MODEL,
+      context_window: 200_000,
+      max_output_tokens: 8_192,
+    });
+  });
+
+  it.each([
+    {
+      label: 'multiple entries without a preferred model',
+      preferredModel: undefined,
+      usage: {
+        [MAIN_MODEL]: modelUsage({ canonicalModel: undefined }),
+        [SECONDARY_MODEL]: modelUsage({ canonicalModel: undefined }),
+      },
+    },
+    {
+      label: 'duplicate canonical matches',
+      preferredModel: CANONICAL_MAIN_MODEL,
+      usage: {
+        [MAIN_MODEL]: modelUsage({ canonicalModel: CANONICAL_MAIN_MODEL }),
+        [SECONDARY_MODEL]: modelUsage({
+          canonicalModel: CANONICAL_MAIN_MODEL,
+          contextWindow: 100_000,
+        }),
+      },
+    },
+  ])('omits singular fields for $label', ({ preferredModel, usage }) => {
+    const result = resultSuccess({ result: 'hi', modelUsage: usage });
+    const metadata = responseMetadataFromResult(result, preferredModel);
+    const usageMetadata = usageMetadataFromResult(result, preferredModel);
+
+    expect(metadata).not.toHaveProperty('model');
+    expect(metadata).not.toHaveProperty('canonical_model');
+    expect(metadata).not.toHaveProperty('context_window');
+    expect(metadata).not.toHaveProperty('max_output_tokens');
+    expect(usageMetadata).toMatchObject({
+      input_tokens: 20,
+      output_tokens: 10,
+      total_tokens: 30,
+    });
+    expect(usageMetadata).not.toHaveProperty('canonical_model');
+    expect(usageMetadata).not.toHaveProperty('context_window');
+    expect(usageMetadata).not.toHaveProperty('max_output_tokens');
+  });
+
+  it('exact raw-key match wins over duplicate canonical matches', () => {
+    const metadata = responseMetadataFromResult(
+      resultSuccess({
+        result: 'hi',
+        modelUsage: {
+          [MAIN_MODEL]: modelUsage({
+            canonicalModel: MAIN_MODEL,
+            contextWindow: 200_000,
+          }),
+          [SECONDARY_MODEL]: modelUsage({
+            canonicalModel: MAIN_MODEL,
+            contextWindow: 100_000,
+          }),
+        },
+      }),
+      MAIN_MODEL
+    );
+
+    expect(metadata.context_window).toBe(200_000);
+  });
+
+  it('preserves selected zero values and does not mutate frozen SDK data', () => {
+    const entry = Object.freeze(
+      modelUsage({
+        inputTokens: 0,
+        outputTokens: 0,
+        contextWindow: 0,
+        maxOutputTokens: 0,
+      })
+    );
+    const entries = Object.freeze({ [MAIN_MODEL]: entry });
+    const result = Object.freeze(
+      resultSuccess({ result: 'hi', modelUsage: entries })
+    );
+
+    expect(responseMetadataFromResult(result, MAIN_MODEL)).toMatchObject({
+      model: MAIN_MODEL,
+      context_window: 0,
+      max_output_tokens: 0,
+    });
+    expect(usageMetadataFromResult(result, MAIN_MODEL)).toMatchObject({
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+      context_window: 0,
+      max_output_tokens: 0,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(entries)).toBe(true);
+    expect(Object.isFrozen(entry)).toBe(true);
+  });
+
+  it('does not let a later subagent model replace the main-loop selection', async () => {
+    const result = await new ChatClaudeAgentSDK({
+      cwd: '/tmp',
+      queryFn: fakeQuery([
+        [
+          assistantMessage({ content: [textBlock('main')], model: MAIN_MODEL }),
+          assistantMessage({
+            content: [textBlock('sub')],
+            model: SECONDARY_MODEL,
+            parentToolUseId: 'tu1',
+          }),
+          resultSuccess({
+            result: '',
+            modelUsage: {
+              [MAIN_MODEL]: modelUsage({
+                canonicalModel: CANONICAL_MAIN_MODEL,
+              }),
+              [SECONDARY_MODEL]: modelUsage({ contextWindow: 100_000 }),
+            },
+          }),
+        ],
+      ]),
+    }).invoke([new HumanMessage('hi')]);
+
+    expect(result.response_metadata.context_window).toBe(200_000);
+  });
+
+  it('captures a latest main-loop model even when its tool-only content is stripped', async () => {
+    const result = await new ChatClaudeAgentSDK({
+      cwd: '/tmp',
+      queryFn: fakeQuery([
+        [
+          assistantMessage({ content: [textBlock('main')], model: MAIN_MODEL }),
+          assistantMessage({
+            content: [toolUseBlock({ id: 'tu1', name: 'Bash' })],
+            model: SECONDARY_MODEL,
+          }),
+          resultSuccess({
+            result: '',
+            modelUsage: {
+              [MAIN_MODEL]: modelUsage({ contextWindow: 200_000 }),
+              [SECONDARY_MODEL]: modelUsage({
+                contextWindow: 100_000,
+                maxOutputTokens: 4_096,
+              }),
+            },
+          }),
+        ],
+      ]),
+    }).invoke([new HumanMessage('hi')]);
+
+    expect(result.content).toBe('main');
+    expect(result.response_metadata).toMatchObject({
+      model: SECONDARY_MODEL,
+      context_window: 100_000,
+      max_output_tokens: 4_096,
+    });
+  });
+
+  it('isolates preferred models across concurrent streams on one instance', async () => {
+    const firstStarted = createDeferred();
+    const releaseFirst = createDeferred();
+    let callIndex = 0;
+    const queryFn = fakeQueryFromGenerator(() => {
+      const currentCall = callIndex;
+      callIndex += 1;
+      const selectedModel = currentCall === 0 ? MAIN_MODEL : SECONDARY_MODEL;
+      const contextWindow = currentCall === 0 ? 200_000 : 100_000;
+
+      return async function* () {
+        yield assistantMessage({
+          content: [textBlock(selectedModel)],
+          model: selectedModel,
+        });
+        if (currentCall === 0) {
+          firstStarted.resolve();
+          await releaseFirst.promise;
+        } else {
+          releaseFirst.resolve();
+        }
+        yield resultSuccess({
+          result: '',
+          modelUsage: {
+            [selectedModel]: modelUsage({ contextWindow }),
+          },
+        });
+      };
+    });
+    const model = new ChatClaudeAgentSDK({ cwd: '/tmp', queryFn });
+
+    const firstResultPromise = model.invoke([new HumanMessage('first')]);
+    await firstStarted.promise;
+    const secondResultPromise = model.invoke([new HumanMessage('second')]);
+    const [first, second] = await Promise.all([
+      firstResultPromise,
+      secondResultPromise,
+    ]);
+
+    expect(first.response_metadata.context_window).toBe(200_000);
+    expect(second.response_metadata.context_window).toBe(100_000);
+  });
 });
 
 describe('B8 — each terminal error subtype becomes a distinct typed error [part of Closure A]', () => {
@@ -192,6 +521,43 @@ describe('B8 — each terminal error subtype becomes a distinct typed error [par
       ).rejects.toBeInstanceOf(ClaudeAgentSDKResultError);
     }
   );
+
+  it('still throws a typed result error after capturing a main-loop model', async () => {
+    const model = new ChatClaudeAgentSDK({
+      cwd: '/tmp',
+      queryFn: fakeQuery([
+        [
+          assistantMessage({
+            content: [textBlock('partial')],
+            model: MAIN_MODEL,
+          }),
+          resultError({ subtype: 'error_max_turns', errors: ['too many'] }),
+        ],
+      ]),
+    });
+
+    await expect(model.invoke([new HumanMessage('hi')])).rejects.toBeInstanceOf(
+      ClaudeAgentSDKResultError
+    );
+  });
+
+  it('still throws the missing-terminal error after capturing a main-loop model', async () => {
+    const model = new ChatClaudeAgentSDK({
+      cwd: '/tmp',
+      queryFn: fakeQuery([
+        [
+          assistantMessage({
+            content: [textBlock('partial')],
+            model: MAIN_MODEL,
+          }),
+        ],
+      ]),
+    });
+
+    await expect(model.invoke([new HumanMessage('hi')])).rejects.toThrow(
+      'the query() stream ended without a terminal result message'
+    );
+  });
 });
 
 describe('B9 — subagent-originated messages never leak into the terminal answer [part of Closure A]', () => {

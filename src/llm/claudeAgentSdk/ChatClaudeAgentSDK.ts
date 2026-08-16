@@ -33,6 +33,7 @@ import {
   isResultMessage,
   isResultSuccess,
   mainLoopChunkFromAssistantMessage,
+  ClaudeAgentSDKMessageChunk,
 } from '@/llm/claudeAgentSdk/messages';
 import {
   ClaudeAgentSDKToolsUnsupportedError,
@@ -45,14 +46,11 @@ import {
   toSdkCanUseTool,
 } from '@/llm/claudeAgentSdk/hookAdapter';
 import {
-  usageMetadataFromResult,
-  responseMetadataFromResult,
-} from '@/llm/claudeAgentSdk/usage';
-import {
   getLocalCwd,
   getWorkspaceRoots,
 } from '@/tools/local/LocalExecutionEngine';
 import { getModuleSessionRegistry } from '@/llm/claudeAgentSdk/sessionRegistry';
+import { resultMetadataFromResult } from '@/llm/claudeAgentSdk/usage';
 
 export interface ChatClaudeAgentSDKCallOptions
   extends BaseChatModelCallOptions {
@@ -535,6 +533,7 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
     });
 
     let yieldedContent = false;
+    let preferredModel: string | undefined;
     const recordSession = (sessionId: string): void => {
       if (threadId != null) {
         this.sessionRegistry.set(threadId, { sessionId, cwd: resolvedCwd });
@@ -543,6 +542,7 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
 
     for await (const message of query) {
       if (isMainLoopAssistantMessage(message)) {
+        preferredModel = message.message.model;
         const chunk = mainLoopChunkFromAssistantMessage(message);
         if (chunk != null) {
           yieldedContent = true;
@@ -568,12 +568,14 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
           throw new ClaudeAgentSDKResultError(message.subtype, message.errors);
         }
 
-        const usageMetadata = usageMetadataFromResult(message);
-        const responseMetadata = responseMetadataFromResult(message);
+        const { usageMetadata, responseMetadata } = resultMetadataFromResult(
+          message,
+          preferredModel
+        );
         const content = yieldedContent ? '' : message.result;
         yield new ChatGenerationChunk({
           text: yieldedContent ? '' : message.result,
-          message: new AIMessageChunk({
+          message: new ClaudeAgentSDKMessageChunk({
             content,
             response_metadata: responseMetadata,
             ...(usageMetadata == null ? {} : { usage_metadata: usageMetadata }),

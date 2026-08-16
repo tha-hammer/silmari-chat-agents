@@ -1,6 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
 import { HumanMessage } from '@langchain/core/messages';
-import type { AIMessageChunk, BaseMessage } from '@langchain/core/messages';
+import type {
+  AIMessageChunk,
+  BaseMessage,
+  UsageMetadata,
+} from '@langchain/core/messages';
+import type { StandardGraph } from '@/graphs';
 import type { OnChunk } from '@/llm/invoke';
 import type * as t from '@/types';
 import {
@@ -13,10 +18,11 @@ import {
   toolResultParam,
 } from './fixtures';
 import { ClaudeAgentSDKResultError } from '@/llm/claudeAgentSdk/errors';
+import { GraphEvents, Providers } from '@/common';
 import { attemptInvoke } from '@/llm/invoke';
 import { initializeModel } from '@/llm/init';
+import { ModelEndHandler } from '@/events';
 import { fakeQuery } from './fakeQuery';
-import { Providers } from '@/common';
 
 function collectChunks(into: AIMessageChunk[]): OnChunk {
   return (chunk: AIMessageChunk): void => {
@@ -70,6 +76,7 @@ describe('Closure A — a Claude Agent SDK turn becomes an observable, correctly
               costUSD: 0.01,
               contextWindow: 200000,
               maxOutputTokens: 4096,
+              canonicalModel: 'claude-sonnet-4-5-20250929',
             },
           },
         }),
@@ -101,14 +108,53 @@ describe('Closure A — a Claude Agent SDK turn becomes an observable, correctly
       input_tokens: 7,
       output_tokens: 4,
       total_tokens: 11,
+      canonical_model: 'claude-sonnet-4-5-20250929',
+      context_window: 200000,
+      max_output_tokens: 4096,
     });
-    const responseMetadata = finalMessage.response_metadata as Record<
-      string,
-      unknown
-    >;
-    expect(responseMetadata.session_id).toBe('s-closure-a');
-    expect(responseMetadata.num_turns).toBe(2);
-    expect(responseMetadata.total_cost_usd).toBe(0.01);
+    expect(usageMetadata).not.toHaveProperty('model');
+    expect(finalMessage.response_metadata).toMatchObject({
+      session_id: 's-closure-a',
+      num_turns: 2,
+      total_cost_usd: 0.01,
+      model: 'claude-sonnet-4-5-20250929',
+      canonical_model: 'claude-sonnet-4-5-20250929',
+      context_window: 200000,
+      max_output_tokens: 4096,
+    });
+
+    const terminalChunk = streamed[streamed.length - 1];
+    expect(terminalChunk.usage_metadata).toMatchObject({
+      input_tokens: 7,
+      output_tokens: 4,
+      total_tokens: 11,
+      canonical_model: 'claude-sonnet-4-5-20250929',
+      context_window: 200000,
+      max_output_tokens: 4096,
+    });
+    expect(terminalChunk.response_metadata).toMatchObject({
+      model: 'claude-sonnet-4-5-20250929',
+      canonical_model: 'claude-sonnet-4-5-20250929',
+      context_window: 200000,
+      max_output_tokens: 4096,
+    });
+
+    const collectedUsage: UsageMetadata[] = [];
+    const modelEndHandler = new ModelEndHandler(collectedUsage);
+    await modelEndHandler.handle(
+      GraphEvents.CHAT_MODEL_END,
+      { output: finalMessage as AIMessageChunk },
+      {},
+      {} as StandardGraph
+    );
+    expect(collectedUsage[0]).toMatchObject({
+      input_tokens: 7,
+      output_tokens: 4,
+      total_tokens: 11,
+      canonical_model: 'claude-sonnet-4-5-20250929',
+      context_window: 200000,
+      max_output_tokens: 4096,
+    });
 
     // Every intermediate chunk `onChunk` observed is also tool_calls-free —
     // proving the invariant holds on the stream itself, not only the
