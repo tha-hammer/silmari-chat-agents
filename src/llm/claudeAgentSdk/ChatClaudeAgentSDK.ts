@@ -1,5 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { AIMessageChunk } from '@langchain/core/messages';
 import { ChatGenerationChunk } from '@langchain/core/outputs';
@@ -152,10 +153,19 @@ function textOfContent(content: MessageContent): string {
  * distinct workspace roots, so this keeps one tenant's on-disk Claude
  * settings/session-cache isolated from another's without requiring a
  * separate host-supplied tenant-id field.
+ *
+ * Created (not just computed) before being handed to the subprocess: the
+ * `claude` CLI does not create `CLAUDE_CONFIG_DIR` itself, so a first-ever
+ * turn for a given tenant hash pointed the subprocess at a directory that
+ * never existed — its session transcript had nowhere to persist, so a
+ * second turn's `--resume <session-id>` always reported no conversation
+ * found, since nothing was ever durably saved for it to find.
  */
 function perTenantConfigDir(resolvedCwd: string): string {
   const digest = createHash('sha256').update(resolvedCwd).digest('hex');
-  return join(tmpdir(), 'claude-agent-sdk-tenants', digest.slice(0, 16));
+  const dir = join(tmpdir(), 'claude-agent-sdk-tenants', digest.slice(0, 16));
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /**

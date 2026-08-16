@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { HumanMessage } from '@langchain/core/messages';
 import { describe, expect, it, jest } from '@jest/globals';
 import type { FakeQueryCall } from './fakeQuery';
@@ -77,6 +78,12 @@ describe('B16 — multi-tenant isolation options apply when configured, and env 
     expect(env?.PATH).toBe(process.env.PATH);
     expect(env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
     expect(env?.CLAUDE_CONFIG_DIR).toEqual(expect.any(String));
+    // Regression: perTenantConfigDir() used to only compute this path, never
+    // create it — the claude CLI does not create CLAUDE_CONFIG_DIR itself, so
+    // a subprocess pointed at a never-created directory has nowhere to
+    // persist its session transcript, and a later --resume always reports no
+    // conversation found.
+    expect(existsSync(env?.CLAUDE_CONFIG_DIR as string)).toBe(true);
   });
 
   it('multiTenant unset: none of the forced options are set', async () => {
