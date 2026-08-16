@@ -1,23 +1,36 @@
 ---
 date: 2026-08-09T15:57:00-04:00
-revised: 2026-08-09T16:40:00-04:00
-revision: 3
+revised: 2026-08-16T12:00:00-04:00
+revision: 4
 researcher: tha-hammer
 reviewer: Codex (2026-08-09-15-57-tdd-providers-baml-phase0-REVIEW.md)
 git_commit: 1256cdcb060639b64cdd03891c98702acff1ac6e
 branch: main
 repository: silmari-chat-agents (@librechat/agents v3.4.3)
-topic: "TDD plan: Providers.BAML — registration seam + ChatBAML with tool binding"
+topic: 'TDD plan: Providers.BAML — registration seam + ChatBAML with tool binding'
 tags: [plan, tdd, baml, providers, llm, packaging]
 status: ready-for-review
-last_updated: 2026-08-09
+last_updated: 2026-08-16
 last_updated_by: tha-hammer
 ---
 
-# `Providers.BAML` — TDD Implementation Plan (rev 3)
+# `Providers.BAML` — TDD Implementation Plan (rev 4)
 
 > **Revision 3** adds the System Map: context/sequence/data-flow diagrams and
 > EBNF grammar for the contracts crossing each of the seven seams.
+>
+> **Revision 4** corrects five defects found during implementation, none of
+> which were caught by rev 2's review or rev 3's diagrams — the code shipped
+> correctly throughout; only this plan's text was wrong (see `AF-fhk`):
+> S7's grammar was unsatisfiable (`selected-tool` has no `id`, but the S7
+> contract requires `toolCalls[].id`); `BamlTurnChunk`/`turn-chunk` were
+> referenced but never defined; B20's error inventory was missing
+> `BamlTurnError` (five errors total, not four); the verification gate named
+> `npm run check:cjs-clean`, a script that never existed (release-facing
+> gate is `npm run test:package`, wired into `prepublishOnly`); and B19's
+> NodeNext type consumer cannot pass — the package's whole type emit is
+> NodeNext-incompatible, not just `./baml`'s (tracked separately as
+> `AF-7bv`/`AF-sy8`).
 >
 > **Revision 2** incorporates the plan review. All ten critical issues are
 > resolved; the resolution table below maps each to where. Three findings
@@ -25,24 +38,24 @@ last_updated_by: tha-hammer
 
 ## Review resolution
 
-| # | Critical issue | Resolution |
-|---|---|---|
-| 1 | Public type closure — enum-only slice can't typecheck | **B0** now lands the full typed surface *with* the enum. `ChatModelConstructorMap` is a mapped type over `Providers` (`src/types/llm.ts:200-202`), so `ProviderOptionsMap`/`ChatModelMap` entries are mandatory, not optional. All `as never` removed. |
-| 2 | Port can't express its promises | Port replaced by a **versioned object contract** (`BAML_PORT_VERSION`, `BamlPromptInput`, `BamlTurnResult`, `BamlDeclaredTool`, `BamlCallMeta`) carrying declared tools, allowed subset, discriminated results, metadata, and `AbortSignal`. |
-| 3 | No turn state machine | Collapsed `selectTools` + `answer` into **one `takeTurn`** returning a discriminated `answer \| tool_calls \| failure`. One provider round-trip per turn — removes the ordering, double-request, and tracing ambiguity entirely. **B7–B10** cover every outcome. |
-| 4 | Unbound tool can reach ToolNode | **B11** — selections are validated against the immutable *current binding* before emitting; a declared-but-unbound or schema-incompatible name never becomes a `tool_call`. |
-| 5 | Transcript not replay-safe; loop stops early | **B6** versions the transcript on the existing session model (`src/session/types.ts`, `src/session/messageSerialization.ts`). **B18** closes the full loop: user → selection → real ToolNode result → second turn → final answer. |
-| 6 | Cancellation, cleanup, concurrency, ordering | **B13** (abort), **B14** (iterator close in `finally`), **B15** (immutable bindings, concurrent invocations), **B12** (order-preserving single-pass partition). |
-| 7 | Usage contradiction | 🔄 **Reversed.** Usage is now carried honestly through optional `BamlCallMeta`; when the host supplies none, **no `usage_metadata` is emitted** — never fabricated zeros. B17 asserts absence. Langfuse suite added to gates. |
-| 8 | Registry tests order-dependent and mutually impossible | **Registry isolation seam** (`__resetChatModelRegistry` snapshot/restore, test-only export) + one closure test against the production singleton. B2/B2b/B3/B4 no longer collide. |
-| 9 | Packaged boundary untested; config desync | **B19** packed-package closure (ESM consumer + NodeNext type consumer against `@librechat/agents/baml`). `circular-deps.test.mjs` 13→14, `typesVersions`, `package-lock.json` all named in *Files touched*. |
-| 10 | `withStructuredOutput` trap | **B16** — explicitly gated as unsupported this phase with a typed error; the title-support claim is narrowed to **completion mode** only. |
+| #   | Critical issue                                         | Resolution                                                                                                                                                                                                                                                       |
+| --- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Public type closure — enum-only slice can't typecheck  | **B0** now lands the full typed surface _with_ the enum. `ChatModelConstructorMap` is a mapped type over `Providers` (`src/types/llm.ts:200-202`), so `ProviderOptionsMap`/`ChatModelMap` entries are mandatory, not optional. All `as never` removed.           |
+| 2   | Port can't express its promises                        | Port replaced by a **versioned object contract** (`BAML_PORT_VERSION`, `BamlPromptInput`, `BamlTurnResult`, `BamlDeclaredTool`, `BamlCallMeta`) carrying declared tools, allowed subset, discriminated results, metadata, and `AbortSignal`.                     |
+| 3   | No turn state machine                                  | Collapsed `selectTools` + `answer` into **one `takeTurn`** returning a discriminated `answer \| tool_calls \| failure`. One provider round-trip per turn — removes the ordering, double-request, and tracing ambiguity entirely. **B7–B10** cover every outcome. |
+| 4   | Unbound tool can reach ToolNode                        | **B11** — selections are validated against the immutable _current binding_ before emitting; a declared-but-unbound or schema-incompatible name never becomes a `tool_call`.                                                                                      |
+| 5   | Transcript not replay-safe; loop stops early           | **B6** versions the transcript on the existing session model (`src/session/types.ts`, `src/session/messageSerialization.ts`). **B18** closes the full loop: user → selection → real ToolNode result → second turn → final answer.                                |
+| 6   | Cancellation, cleanup, concurrency, ordering           | **B13** (abort), **B14** (iterator close in `finally`), **B15** (immutable bindings, concurrent invocations), **B12** (order-preserving single-pass partition).                                                                                                  |
+| 7   | Usage contradiction                                    | 🔄 **Reversed.** Usage is now carried honestly through optional `BamlCallMeta`; when the host supplies none, **no `usage_metadata` is emitted** — never fabricated zeros. B17 asserts absence. Langfuse suite added to gates.                                    |
+| 8   | Registry tests order-dependent and mutually impossible | **Registry isolation seam** (`__resetChatModelRegistry` snapshot/restore, test-only export) + one closure test against the production singleton. B2/B2b/B3/B4 no longer collide.                                                                                 |
+| 9   | Packaged boundary untested; config desync              | **B19** packed-package closure (ESM consumer + NodeNext type consumer against `@librechat/agents/baml`). `circular-deps.test.mjs` 13→14, `typesVersions`, `package-lock.json` all named in _Files touched_.                                                      |
+| 10  | `withStructuredOutput` trap                            | **B16** — explicitly gated as unsupported this phase with a typed error; the title-support claim is narrowed to **completion mode** only.                                                                                                                        |
 
 **Warnings also resolved:** `MISTRALAI` added to B3 (12 of 12 providers, enumerated from the enum). Property domains restricted to valid preconditions. B15 no longer described as synchronous. `functions` documented as non-serializable. Empty-stream outcome defined (B10). Public error classes added (B20). Host documentation added (B21). CJS-clean check added to a release-facing command, not CI-only. `bd init` decision surfaced.
 
 ### Three reversals
 
-- 🔄 **`./baml` ships dual CJS+ESM, not ESM-only.** The review is right that rev 1's rationale stopped applying the moment `ChatBAML` imported no bridge. Worse, an ESM-only subpath beside a CJS root creates **two registries** — a real bug. Dual keeps the registry singular per module system. The *host's* generated adapter is still ESM; that is the host's constraint, not ours, and it belongs in docs (B21).
+- 🔄 **`./baml` ships dual CJS+ESM, not ESM-only.** The review is right that rev 1's rationale stopped applying the moment `ChatBAML` imported no bridge. Worse, an ESM-only subpath beside a CJS root creates **two registries** — a real bug. Dual keeps the registry singular per module system. The _host's_ generated adapter is still ESM; that is the host's constraint, not ours, and it belongs in docs (B21).
 - 🔄 **The optional peer dependency is dropped.** This package never imports the bridge, so declaring a peer on it is metadata that claims a relationship that does not exist. Removed; the host owns the dependency. (Rev-1 B7 deleted.)
 - 🔄 **`registerChatModel` stays internal.** Not exported from `src/index.ts`; the "benefits any out-of-tree provider" claim is withdrawn. Promoting it to a supported extension API is a separate, deliberate decision with its own versioning obligations.
 
@@ -117,12 +130,42 @@ export interface BamlCallMeta {
 }
 
 export type BamlTurnResult =
-  | { readonly kind: 'answer'; readonly text: string; readonly meta?: BamlCallMeta }
-  | { readonly kind: 'tool_calls';
+  | {
+      readonly kind: 'answer';
+      readonly text: string;
+      readonly meta?: BamlCallMeta;
+    }
+  | {
+      readonly kind: 'tool_calls';
       readonly calls: readonly BamlSelectedTool[];
       readonly failures: readonly BamlToolFailure[];
-      readonly meta?: BamlCallMeta }
-  | { readonly kind: 'failure'; readonly failure: BamlToolFailure; readonly meta?: BamlCallMeta };
+      readonly meta?: BamlCallMeta;
+    }
+  | {
+      readonly kind: 'failure';
+      readonly failure: BamlToolFailure;
+      readonly meta?: BamlCallMeta;
+    };
+
+export type BamlTurnChunk = // rev 4: referenced below, was never defined
+
+    | {
+        readonly kind: 'text';
+        readonly text: string;
+        readonly meta?: BamlCallMeta;
+      }
+    | {
+        readonly kind: 'tool_calls';
+        readonly calls: readonly BamlSelectedTool[];
+        readonly failures: readonly BamlToolFailure[];
+        readonly meta?: BamlCallMeta;
+      }
+    | {
+        readonly kind: 'failure';
+        readonly failure: BamlToolFailure;
+        readonly meta?: BamlCallMeta;
+      };
+// no tool-arg delta kind this phase — deferred, see "Deferred — blocked, not dropped"
 
 export interface BamlFunctionSet {
   readonly version: typeof BAML_PORT_VERSION;
@@ -311,12 +354,14 @@ baml-type       = "BamlFunctionSet"    | "BamlClientOptions"
                 | "BamlCallMeta"       | "BamlTranscriptEntry"
                 | "BAML_PORT_VERSION"  | baml-error ;
 baml-error      = "BamlNotRegisteredError" | "BamlUnsupportedError"
-                | "BamlToolNotBoundError" | "BamlPortVersionError" ;
+                | "BamlToolNotBoundError"  | "BamlPortVersionError"
+                | "BamlTurnError" ;               (* rev 4: was missing — required by B9 *)
 
 exports-entry   = '"./baml"' , "{" , '"import"' , esm-path ,
                                     '"require"' , cjs-path ,      (* dual — rev 2 *)
                                     '"types"'   , dts-path , "}" ;
 ```
+
 Contract: every referenced type is exported from `./baml`; a compile-only
 consumer implements the port with **no** casts (B0). `typesVersions`
 (`package.json:78-92`) mirrors the entry. `config/package-entries.mjs` gains the
@@ -338,6 +383,7 @@ reject          = ? slot holds a different ctor ? , "throw" ,
 resolve         = "getChatModelClass" , "(" , provider , ")" ;
 resolve-result  = ctor | "throw" , '"Unsupported LLM provider: "' , provider ;
 ```
+
 Contract: `getChatModelClass` (`src/llm/providers.ts:43-52`) is unchanged;
 `llmProviders` stays `Partial<ChatModelConstructorMap>`. Test-only
 `__resetChatModelRegistry()` snapshots/restores the map.
@@ -358,6 +404,7 @@ graph-tools     = ? GenericTool[] | BindToolsInput[] | GoogleAIToolType[],
                     src/types/graph.ts:330 ? ;
 bind-result     = ? a NEW bound Runnable; receiver unmutated (B15) ? ;
 ```
+
 Contract: single-argument constructor. `bindTools` is called only for a non-empty
 list (`src/llm/init.ts:58-62`). The `override ?? new …` short-circuit at
 `src/llm/init.ts:29-31` is preserved verbatim.
@@ -385,7 +432,9 @@ tool-call       = "id"   , ":" , non-empty-string        (* src/stream.ts:1693-1
 tool-call-chunk = [ "id" ] , [ "name" ] , [ "args" , ":" , string ]
                 , "index" , ":" , number ;                (* REQUIRED — src/stream.ts:1760 *)
 ```
+
 Contract:
+
 - Chunks must survive `concat()` from `@langchain/core/utils/stream`
   (`appendStreamChunk`, `src/llm/invoke.ts:656-672`).
 - `attemptInvoke` filters out `tool_calls` entries with a falsy `name`
@@ -422,13 +471,19 @@ tool-calls      = "kind" , ":" , '"tool_calls"' , "calls" , ":" , selected-tool*
                                                 , "failures" , ":" , tool-failure* , [ meta ] ;
 failure         = "kind" , ":" , '"failure"'    , "failure" , ":" , tool-failure , [ meta ] ;
 
+turn-chunk      = text-chunk | tool-calls | failure ;   (* rev 4: was referenced at :409, never defined *)
+text-chunk      = "kind" , ":" , '"text"' , "text" , ":" , string , [ meta ] ;
+                                          (* no tool-arg delta kind this phase — deferred *)
+
 selected-tool   = "name" , ":" , string , "args" , ":" , object ;
 tool-failure    = "code" , ":" , failure-code , "message" , ":" , string , [ "toolName" , ":" , string ] ;
 failure-code    = '"unbound"' | '"schema_mismatch"' | '"model_error"' | '"parse_error"' ;
 meta            = "meta" , ":" , [ "model" ] , [ "finishReason" ]
                            , [ "inputTokens" ] , [ "outputTokens" ] ;
 ```
+
 **Two host obligations, both load-bearing:**
+
 1. `takeTurn` / `streamTurn` **must not reject for a per-tool failure** — failures
    are values in `failures[]`. Rejection is reserved for transport and abort.
    Routes around upstream bug 1 (a `catch` at an `await` site drops errors from
@@ -449,6 +504,7 @@ tool-node       = ? tool_calls non-empty
                     AND every entry has non-empty id AND non-empty name
                     AND not already in invokedToolIds ? ;    (* ToolNode.ts:5116-5131 *)
 ```
+
 Contract: id uniqueness across a response is B12's invariant, including the same
 tool selected twice. `invalid_tool_calls` carries its own id-bearing requirements
 (`src/tools/ToolNode.ts:5144-5160`); this phase does not emit them — rejected
@@ -465,9 +521,15 @@ feedback        = transcript-entry* ;                    (* B6 projection *)
 transcript-entry= "role" , ":" , role
                 , "content" , ":" , json-value
                 , [ "toolCallId" , ":" , string ]
-                , [ "toolCalls"  , ":" , selected-tool* ] ;
+                , [ "toolCalls"  , ":" , transcript-tool-call* ] ;
+transcript-tool-call = selected-tool , "id" , ":" , string ;
+                        (* rev 4: selected-tool (S5) has no id; the transcript
+                           projection needs one to pair with tool-message.tool_call_id
+                           below. Shipped as `BamlTranscriptToolCall extends
+                           BamlSelectedTool { id }` (src/llm/baml/types.ts:53-55). *)
 role            = '"system"' | '"user"' | '"assistant"' | '"tool"' ;
 ```
+
 Contract: ordering preserved; every `tool-message.tool_call_id` pairs with the
 `toolCalls[].id` emitted in the prior turn. Serialization reuses
 `src/session/messageSerialization.ts:105-176` rather than a second model. This is
@@ -475,15 +537,15 @@ the edge B18's red-at-seam proof disables.
 
 ### Seam → behavior coverage
 
-| Seam | Crosses | Behaviors | Closure |
-|---|---|---|---|
-| S1 | package boundary | B0, B19, B21 | **B19** |
-| S2 | module registration | B1, B2, B2b, B3, B5, B20 | **B5** |
-| S3 | construction | B0, B4, B15 | — |
-| S4 | invocation | B7–B10, B12, B13, B14, B17 | — |
-| S5 | host port | B0, B6, B9, B11, B16, B17 | — |
-| S6 | graph routing | B11, B12 | **B18** |
-| S7 | tool feedback | B6, B18 | **B18** |
+| Seam | Crosses             | Behaviors                  | Closure |
+| ---- | ------------------- | -------------------------- | ------- |
+| S1   | package boundary    | B0, B19, B21               | **B19** |
+| S2   | module registration | B1, B2, B2b, B3, B5, B20   | **B5**  |
+| S3   | construction        | B0, B4, B15                | —       |
+| S4   | invocation          | B7–B10, B12, B13, B14, B17 | —       |
+| S5   | host port           | B0, B6, B9, B11, B16, B17  | —       |
+| S6   | graph routing       | B11, B12                   | **B18** |
+| S7   | tool feedback       | B6, B18                    | **B18** |
 
 ---
 
@@ -502,7 +564,7 @@ the edge B18's red-at-seam proof disables.
 - **Registry isolation**: `__resetChatModelRegistry()` — a test-only export that
   snapshots and restores `llmProviders`. Every registry test runs inside it.
   Exactly **one** closure test (B5) runs against the production singleton.
-- **Fakes are real implementations of *our* port**, not mocks of BAML:
+- **Fakes are real implementations of _our_ port**, not mocks of BAML:
   `src/llm/baml/__tests__/fakeFunctionSet.ts`.
 - **Packed-package tests** (B19) run post-build against a `npm pack` tarball.
 - **No `as never`** anywhere — if a fixture needs a cast, the public type is wrong.
@@ -511,7 +573,7 @@ the edge B18's red-at-seam proof disables.
 
 Three BLOCKING closure tests. Anchors derive from the research doc's map.
 
-### Closure B5: "importing the baml entry makes BAML usable"  [BLOCKING]
+### Closure B5: "importing the baml entry makes BAML usable" [BLOCKING]
 
 Crosses a module-registration boundary. No async edge → no driver.
 
@@ -524,7 +586,7 @@ Crosses a module-registration boundary. No async edge → no driver.
 - **DRIVABILITY**: registry is the injected store seam; no clock needed
 - **EXECUTION**: in-process, no infra; fails closed if the entry does not resolve
 
-### Closure B18: "a tool result feeds the next turn and produces a final answer"  [BLOCKING]
+### Closure B18: "a tool result feeds the next turn and produces a final answer" [BLOCKING]
 
 Crosses the graph's conditional-edge boundary **and** a second provider turn.
 
@@ -538,7 +600,7 @@ Crosses the graph's conditional-edge boundary **and** a second provider turn.
   the second turn cannot see the result → final answer lacks it → red
 - **DRIVABILITY**: port is the injected seam; `ToolNode` runs real
 
-### Closure B19: "the published subpath registers, from the packed package"  [BLOCKING]
+### Closure B19: "the published subpath registers, from the packed package" [BLOCKING]
 
 Crosses the **packaging** boundary — the one B5 cannot see, because B5 imports a
 source alias and can stay green while `exports`, the tsdown entry, the emitted JS
@@ -559,7 +621,7 @@ Full Red/Green/Refactor cycles are given for the load-bearing behaviors. The
 rest carry their complete spec (Given/When/Then, files touched, criteria); their
 cycles follow the same shape.
 
-### B0 — Public type closure lands with the enum  [replaces rev-1 B1]
+### B0 — Public type closure lands with the enum [replaces rev-1 B1]
 
 **Given** the typed surface is added
 **When** `npx tsc --noEmit` runs
@@ -577,18 +639,23 @@ member, `BamlClientOptions` (required `functions`; optional `model`,
 **Files touched**: `src/common/enum.ts`, `src/types/llm.ts`, `src/llm/baml/types.ts`
 
 #### 🔴 Red
+
 A compile-only consumer that implements `BamlFunctionSet` **with no assertions**:
+
 ```ts
 // src/llm/baml/__tests__/types.compile.test.ts
 const options: BamlClientOptions = { functions: fakeFunctionSet(), model: 'x' };
 expect(options.functions.version).toBe(BAML_PORT_VERSION);
 ```
+
 Red because the types do not exist.
 
 #### 🟢 Green
+
 Add the enum member, the types module, and both map entries.
 
 #### 🔵 Refactor
+
 All BAML types live in one module re-exported from `./baml` — no type is
 reachable only via a deep path. Checklist: no duplication (options extend
 `BaseChatModelParams` rather than restating it), intent-revealing names, no new
@@ -616,12 +683,12 @@ Runs inside the registry-isolation seam. **Files**: `src/llm/__tests__/providers
 ```ts
 export function registerChatModel<P extends Providers>(
   provider: P,
-  ctor: ChatModelConstructorMap[P],
+  ctor: ChatModelConstructorMap[P]
 ): void {
   const existing = llmProviders[provider];
-  if (existing === ctor) return;                                    // idempotent
+  if (existing === ctor) return; // idempotent
   if (existing != null) {
-    throw new Error(`Provider already registered: ${provider}`);    // never clobber
+    throw new Error(`Provider already registered: ${provider}`); // never clobber
   }
   llmProviders[provider] = ctor;
 }
@@ -652,7 +719,7 @@ Instance of the registered ctor, constructed with `clientOptions`; `bindTools`
 called only for a non-empty tool list (`src/llm/init.ts:58-62`). Preserves the
 `override ?? new ...` short-circuit — explicitly **not** refactored.
 
-### B5 — Importing the baml entry registers the provider  [BLOCKING CLOSURE]
+### B5 — Importing the baml entry registers the provider [BLOCKING CLOSURE]
 
 Anchors above. The only test that touches the production singleton.
 
@@ -717,7 +784,7 @@ Chunks concatenate; `getChunkContent` (`src/stream.ts:1286`) reads each. An
 
 ---
 
-### B11 — Selections are validated against the current binding  [safety]
+### B11 — Selections are validated against the current binding [safety]
 
 **Given** a function set declaring `['get_weather','web_search','run_code']`, bound to `['get_weather']`
 **When** `takeTurn` returns a selection for `web_search`
@@ -769,7 +836,7 @@ uniform record.
 **When** `withStructuredOutput(schema)`
 **Then** throws `BamlUnsupportedError` naming the limitation and the workaround
 
-BaseChatModel's inherited implementation binds a *synthetic* tool, which cannot
+BaseChatModel's inherited implementation binds a _synthetic_ tool, which cannot
 exist in a frozen compiled union — it would fail B11 at request time with a
 confusing error. Failing at the call site is honest.
 
@@ -784,19 +851,24 @@ matching every other provider (`src/llm/stream/chunkAdapters.ts:15-35` preserves
 on split; it does not create).
 **Given** `meta` absent **then** **no** `usage_metadata` field at all — not zeros.
 
-### B18 — The full tool loop closes  [BLOCKING CLOSURE]
+### B18 — The full tool loop closes [BLOCKING CLOSURE]
 
 user → selection → **real `ToolNode`** execution → result in the transcript →
 second turn → final answer containing the result. Anchors above.
 
 ---
 
-### B19 — The published subpath works from a packed package  [BLOCKING CLOSURE]
+### B19 — The published subpath works from a packed package [BLOCKING CLOSURE]
 
 Post-build, against `npm pack`:
+
 - ESM consumer: `import '@librechat/agents/baml'` then root `initializeModel` resolves BAML — **one registry**
 - CJS consumer: same, proving 🔄 the dual-format decision (rev 1's ESM-only subpath beside a CJS root would have created two registries)
-- NodeNext type consumer: `BamlClientOptions` resolves through `exports.types` **and** `typesVersions`
+- ~~NodeNext type consumer: `BamlClientOptions` resolves through `exports.types` **and** `typesVersions`~~ —
+  rev 4: cannot pass. The package's whole type emit is NodeNext-incompatible,
+  not just `./baml`'s (tracked separately as `AF-7bv`/`AF-sy8`). The `bundler`
+  and `node10` consumers cover `exports.types` and `typesVersions` respectively
+  and do pass.
 - Negative: importing only the root leaves BAML unregistered
 
 **Files touched**: `package.json` (`exports['./baml']` with `import`/`require`/`types`; `typesVersions`), `config/package-entries.mjs`, **`config/circular-deps.test.mjs` (13 → 14)**, `package-lock.json`, `test/package/**`
@@ -806,7 +878,9 @@ Post-build, against `npm pack`:
 Stable typed errors, not message fragments: `BamlNotRegisteredError` (root
 consumer used `Providers.BAML` without importing `./baml`, with the remediation
 in the message), `BamlUnsupportedError`, `BamlToolNotBoundError`,
-`BamlPortVersionError`.
+`BamlPortVersionError`, `BamlTurnError` (B9's `{ kind: 'failure' }` surface —
+rev 4: was missing from this inventory; five errors total, all exported from
+`./baml`).
 
 ### B21 — Host documentation ships with the feature
 
@@ -830,8 +904,10 @@ npx jest                          # full suite, bridge NOT installed
 npx jest langfuse deterministic-trace-id   # AGENTS.md:155 — providers touch tracing
 npm run test:circular-deps        # the 13→14 change
 npm run build
-npm run check:cjs-clean           # release-facing, not CI-only
-node test/package/run.mjs         # B19 packed consumers
+npm run test:package              # rev 4: was `npm run check:cjs-clean`, a script that
+                                   # never existed. Wired into prepublishOnly; runs
+                                   # test/package/run.mjs — B19 packed consumers,
+                                   # release-facing, not CI-only
 ```
 
 Langfuse is non-negotiable for a provider (`AGENTS.md:122-157`): a BAML
@@ -840,13 +916,13 @@ a tool turn must produce a well-shaped `tool-dispatch` chain.
 
 ## Deferred — blocked, not dropped
 
-| Behavior | Blocked by | Unblocks when |
-|---|---|---|
-| Runtime-varying tool union from `getToolsForBinding()` | upstream bug 2 (`output_format.rs:608`) | panic fixed — `$types: { T: { list: { union } } }` already parses |
-| Streamed **tool-argument** deltas → `handleToolCallChunks` | needs the union; `$parse_stream` partials verified working | with bug 2 fixed |
-| Prompt caching | `request_body`/`headers` unplumbed | those reach the wire |
-| `withStructuredOutput` | frozen union vs. synthetic tool | runtime unions land |
-| `registerChatModel` as a public extension API | deliberate scope decision | separate design |
+| Behavior                                                   | Blocked by                                                 | Unblocks when                                                     |
+| ---------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| Runtime-varying tool union from `getToolsForBinding()`     | upstream bug 2 (`output_format.rs:608`)                    | panic fixed — `$types: { T: { list: { union } } }` already parses |
+| Streamed **tool-argument** deltas → `handleToolCallChunks` | needs the union; `$parse_stream` partials verified working | with bug 2 fixed                                                  |
+| Prompt caching                                             | `request_body`/`headers` unplumbed                         | those reach the wire                                              |
+| `withStructuredOutput`                                     | frozen union vs. synthetic tool                            | runtime unions land                                               |
+| `registerChatModel` as a public extension API              | deliberate scope decision                                  | separate design                                                   |
 
 ## Decisions needed
 
@@ -855,17 +931,17 @@ a tool turn must produce a well-shaped `tool-dispatch` chain.
    examples? I will not add a dependency silently.
 2. ~~`bd init`?~~ **Resolved** — beads is initialized. Tracking created:
 
-   | Issue | Scope |
-   |---|---|
-   | `AF-la1` | epic — Providers.BAML port |
-   | `AF-iur` | B0–B5 type closure + registration seam (closure **B5**) |
-   | `AF-cob` | B6–B10 transcript + turn state machine |
-   | `AF-abc` | B11–B17 tool binding, safety, cancellation, usage |
-   | `AF-0km` | B18 full tool-loop closure **[BLOCKING]** |
+   | Issue    | Scope                                                     |
+   | -------- | --------------------------------------------------------- |
+   | `AF-la1` | epic — Providers.BAML port                                |
+   | `AF-iur` | B0–B5 type closure + registration seam (closure **B5**)   |
+   | `AF-cob` | B6–B10 transcript + turn state machine                    |
+   | `AF-abc` | B11–B17 tool binding, safety, cancellation, usage         |
+   | `AF-0km` | B18 full tool-loop closure **[BLOCKING]**                 |
    | `AF-z59` | B19–B21 packaged boundary, errors, docs (closure **B19**) |
-   | `AF-d9m` | decision — fast-check |
-   | `AF-ln0` | upstream bug 2 (blocks runtime unions) |
-   | `AF-e82` | upstream bug 1 (designed around, not blocking) |
+   | `AF-d9m` | decision — fast-check                                     |
+   | `AF-ln0` | upstream bug 2 (blocks runtime unions)                    |
+   | `AF-e82` | upstream bug 1 (designed around, not blocking)            |
 
 ## References
 
