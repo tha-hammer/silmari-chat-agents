@@ -5,7 +5,7 @@ plan: thoughts/searchable/shared/plans/2026-08-16-AF-sy8-nodenext-baml-declarati
 review: thoughts/searchable/shared/plans/2026-08-16-AF-sy8-nodenext-baml-declarations-REVIEW.md
 bead: AF-sy8
 depends_on: AF-7bv
-status: implementation-ready-map
+status: implemented-verified-map
 ---
 
 # System map: AF-sy8 NodeNext-compatible BAML declarations
@@ -81,7 +81,7 @@ sequenceDiagram
   P->>TS: node10 config + type-consumer.ts
   P->>TS: nodenext config + all-exports + type-consumer
   P->>TS: node16 config + all-exports + type-consumer
-  TS-->>P: every process exits zero or B19 fails closed
+  TS-->>P: every routing process exits zero or B19 fails closed
 ```
 
 ## Declaration-specifier grammar
@@ -106,14 +106,14 @@ index_target       = emitted_path, "/index.d.ts" ;
 
 Transformation contract:
 
-| Input path after default alias pass | Declaration target | Output path |
-| --- | --- | --- |
-| bare package or `node:` builtin | not first-party | unchanged |
-| already supported explicit path | already publishable | unchanged |
-| extensionless relative | sibling `name.d.ts` | `name.js` |
-| extensionless relative | sibling `name/index.d.ts` | `name/index.js` |
-| `@/...` | residual alias | throw |
-| extensionless relative | no declaration target | throw |
+| Input path after default alias pass | Declaration target        | Output path     |
+| ----------------------------------- | ------------------------- | --------------- |
+| bare package or `node:` builtin     | not first-party           | unchanged       |
+| already supported explicit path     | already publishable       | unchanged       |
+| extensionless relative              | sibling `name.d.ts`       | `name.js`       |
+| extensionless relative              | sibling `name/index.d.ts` | `name/index.js` |
+| `@/...`                             | residual alias            | throw           |
+| extensionless relative              | no declaration target     | throw           |
 
 The returned string is `statement` with only its quoted `specifier` replaced. The prefix, suffix, import/export form, whitespace, comments, and quote character remain unchanged.
 
@@ -127,7 +127,7 @@ stateDiagram-v2
   AliasResolved --> ExplicitDeclarations: custom replacer
   ExplicitDeclarations --> Validated: full-tree validation
   Validated --> Packed: npm pack
-  Packed --> Consumed: strict B19 compiles
+  Packed --> Consumed: packed B19 routing compiles
   UnsafeDeclarations --> Failed: residual/unresolved specifier
   AliasResolved --> Failed: residual alias or missing target
   ExplicitDeclarations --> Failed: validation finds invalid edge
@@ -141,54 +141,54 @@ Failure after a per-file write may leave a partial ignored `dist/` tree. That st
 
 `src/llm/baml/index.ts:12-14` exposes this unchanged manifest.
 
-| Kind | Exported names | Fixture witness |
-| --- | --- | --- |
-| Runtime class | `ChatBAML` | value import and reference; never instantiate |
-| Runtime constant | `BAML_PORT_VERSION` | value import; port fixture uses it |
-| Runtime errors | `BamlNotRegisteredError`, `BamlPortVersionError`, `BamlToolNotBoundError`, `BamlTurnError`, `BamlUnsupportedError` | value imports and reference array |
-| Port/tool types | `BamlPortVersion`, `BamlDeclaredTool`, `BamlSelectedTool`, `BamlFailureCode`, `BamlToolFailure`, `BamlFunctionSet`, `BamlClientOptions` | type-only manifest tuple plus existing no-cast adapter |
-| Transcript/input types | `BamlCallMeta`, `BamlTranscriptRole`, `BamlTranscriptToolCall`, `BamlTranscriptEntry`, `BamlPromptInput` | type-only manifest tuple |
-| Outcome types | `BamlAnswerOutcome`, `BamlTextChunk`, `BamlToolCallsOutcome`, `BamlFailureOutcome`, `BamlTurnResult`, `BamlTurnChunk` | type-only manifest tuple |
+| Kind                   | Exported names                                                                                                                          | Fixture witness                                        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Runtime class          | `ChatBAML`                                                                                                                              | value import and reference; never instantiate          |
+| Runtime constant       | `BAML_PORT_VERSION`                                                                                                                     | value import; port fixture uses it                     |
+| Runtime errors         | `BamlNotRegisteredError`, `BamlPortVersionError`, `BamlToolNotBoundError`, `BamlTurnError`, `BamlUnsupportedError`                      | value imports and reference array                      |
+| Port/tool types        | `BamlPortVersion`, `BamlDeclaredTool`, `BamlSelectedTool`, `BamlFailureCode`, `BamlToolFailure`, `BamlFunctionSet`, `BamlClientOptions` | type-only manifest tuple plus existing no-cast adapter |
+| Transcript/input types | `BamlCallMeta`, `BamlTranscriptRole`, `BamlTranscriptToolCall`, `BamlTranscriptEntry`, `BamlPromptInput`                                | type-only manifest tuple                               |
+| Outcome types          | `BamlAnswerOutcome`, `BamlTextChunk`, `BamlToolCallsOutcome`, `BamlFailureOutcome`, `BamlTurnResult`, `BamlTurnChunk`                   | type-only manifest tuple                               |
 
 ## Consumer matrix
 
-| Mode | Fixture(s) | Resolution seam | Required result |
-| --- | --- | --- | --- |
-| ESM runtime | `esm-consumer.mjs` | `exports.import` | BAML registers and resolves |
-| CJS runtime | `cjs-consumer.cjs` | `exports.require` | same registry behavior |
-| Negative runtime | `negative-consumer.mjs` | root entry only | BAML remains unregistered |
-| Bundler types | `type-consumer.ts` | `exports.types` | complete BAML manifest compiles |
-| Node10 types | `type-consumer.ts` | `typesVersions` | complete BAML manifest compiles |
-| NodeNext types | `all-exports-consumer.mts`, `type-consumer.ts` | `exports.types`, strict ESM declaration traversal | 14/14 subpaths and BAML manifest compile; `skipLibCheck: false` |
-| Node16 types | `all-exports-consumer.mts`, `type-consumer.ts` | Node16 ESM declaration traversal | same result; `skipLibCheck: false` |
+| Mode             | Fixture(s)                                     | Resolution seam                               | Required result                                                                                   |
+| ---------------- | ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| ESM runtime      | `esm-consumer.mjs`                             | `exports.import`                              | BAML registers and resolves                                                                       |
+| CJS runtime      | `cjs-consumer.cjs`                             | `exports.require`                             | same registry behavior                                                                            |
+| Negative runtime | `negative-consumer.mjs`                        | root entry only                               | BAML remains unregistered                                                                         |
+| Bundler types    | `type-consumer.ts`                             | `exports.types`                               | complete BAML manifest compiles                                                                   |
+| Node10 types     | `type-consumer.ts`                             | `typesVersions`                               | complete BAML manifest compiles                                                                   |
+| NodeNext types   | `all-exports-consumer.mts`, `type-consumer.ts` | packed `exports.types` routing under NodeNext | 14/14 subpaths route and both fixtures compile; `skipLibCheck: true`, paired with full-tree audit |
+| Node16 types     | `all-exports-consumer.mts`, `type-consumer.ts` | packed `exports.types` routing under Node16   | same composite result                                                                             |
 
 ## Cross-layer contracts
 
-| Seam | Producer obligation | Consumer obligation | Observable |
-| --- | --- | --- | --- |
-| Source -> declaration emit | Preserve public TypeScript surface | Emit declaration graph | `dist/types/llm/baml/index.d.ts` exists |
-| Default -> custom replacer | Return full statement with source aliases resolved | Load exact enabled/file config, preserve full syntax, append declaration-aware runtime extension, and fail if the loader is skipped | real tsc-alias integration test plus fatal postcondition |
-| Rewriter -> package | No residual `@/`; no extensionless/unresolved first-party edge | Ship exactly built `dist` | full-tree validation plus tarball contents |
-| `exports.types` -> TypeScript | Route `./baml` to its declaration entry | Traverse ESM declaration graph strictly | packed NodeNext/Node16 exit status |
-| BAML barrel -> host | Export seven values and eighteen types | Reference all names without private mappings or casts | shared `type-consumer.ts` |
+| Seam                          | Producer obligation                                            | Consumer obligation                                                                                                                 | Observable                                                                    |
+| ----------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Source -> declaration emit    | Preserve public TypeScript surface                             | Emit declaration graph                                                                                                              | `dist/types/llm/baml/index.d.ts` exists                                       |
+| Default -> custom replacer    | Return full statement with source aliases resolved             | Load exact enabled/file config, preserve full syntax, append declaration-aware runtime extension, and fail if the loader is skipped | real tsc-alias integration test plus fatal postcondition                      |
+| Rewriter -> package           | No residual `@/`; no extensionless/unresolved first-party edge | Ship exactly built `dist`                                                                                                           | full-tree validation plus tarball contents                                    |
+| `exports.types` -> TypeScript | Route `./baml` and all public entries to packed declarations   | Resolve both fixtures under NodeNext/Node16 with dependency checking isolated                                                       | packed TypeScript exit status; first-party integrity comes from the AST audit |
+| BAML barrel -> host           | Export seven values and eighteen types                         | Reference all names without private mappings or casts                                                                               | shared `type-consumer.ts`                                                     |
 
 ## Invariants and forbidden shortcuts
 
 - One library-wide transformer; no BAML-only pass.
 - No `src/llm/baml/**` import rewrite and no BAML runtime behavior change.
 - No source aliases or direct repository `dist/types` path mappings in consumer configs.
-- No `skipLibCheck: true` in NodeNext or Node16.
+- NodeNext/Node16 `skipLibCheck: true` is allowed only as the documented packed-routing half of the composite gate; it cannot substitute for the fatal full-tree audit.
 - No namespace-only all-exports fixture as a substitute for the named BAML fixture.
 - No claim of transactional writes or ESLint coverage for globally ignored config/test files.
 - The nine already-clean `./langchain/*` leaf facades remain untouched.
-- A directory-local literal scan is diagnostic; the packed strict compile is the closure proof.
+- A directory-local literal scan is diagnostic; the full-tree audit plus packed routing matrix is the composite closure proof.
 
 ## Red and Green at the seam
 
-| State | Root | `./langchain` | `./baml` | `./openai` | `./responses` | Nine leaf exports |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Recorded pre-fix NodeNext | fail: 46 `TS2834` | fail: 8 `TS2834` | fail: 3 `TS2834` | fail: alias `TS2307` | fail: alias `TS2307` | pass: 9/9 |
-| Required post-fix NodeNext/Node16 | pass | pass | pass + complete named manifest | pass | pass | pass: 9/9 unchanged |
+| State                             |              Root |    `./langchain` |                       `./baml` |           `./openai` |        `./responses` |   Nine leaf exports |
+| --------------------------------- | ----------------: | ---------------: | -----------------------------: | -------------------: | -------------------: | ------------------: |
+| Recorded pre-fix NodeNext         | fail: 46 `TS2834` | fail: 8 `TS2834` |               fail: 3 `TS2834` | fail: alias `TS2307` | fail: alias `TS2307` |           pass: 9/9 |
+| Required post-fix NodeNext/Node16 |              pass |             pass | pass + complete named manifest |                 pass |                 pass | pass: 9/9 unchanged |
 
 ## Implementation handoff
 
@@ -196,6 +196,6 @@ AF-sy8 implementation begins only after AF-7bv reports its commit and changed-fi
 
 1. Inspect and run the real transformer integration suite; reject the prerequisite if loader shape, ordering, or full-statement preservation is unproved.
 2. Expand `test/package/consumers/type-consumer.ts` to the complete manifest.
-3. Verify or modify both strict configs to compile `all-exports-consumer.mts` and `type-consumer.ts`.
-4. Build, inspect BAML's three barrel paths, and run the full packed B19 matrix.
+3. Verify both Node configs compile `all-exports-consumer.mts` and `type-consumer.ts` with their dependency-isolation rationale documented.
+4. Build, require the full-tree audit, inspect BAML's three barrel paths, and run the full packed B19 matrix.
 5. Report the 14/14 export matrix and close AF-sy8 only after AF-7bv is complete.

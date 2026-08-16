@@ -1,23 +1,62 @@
 // Type consumer — published types only. Implements the port against the types
 // exported from `@librechat/agents/baml` with NO casts (the B0 contract), and
-// references the full public error surface (the S1 grammar) to prove it is
-// reachable from the packaged entry. Type-checked under both bundler
-// (exports.types) and node10 (typesVersions); see the two tsconfigs and the
-// resolution-mode note in run.mjs.
+// references the complete public value/type surface to prove it is reachable
+// from the packaged entry. Type-checked under bundler, node10, NodeNext, and
+// Node16; see the consumer configs and the resolution-mode note in run.mjs.
 import '@librechat/agents/baml';
-import { BAML_PORT_VERSION } from '@librechat/agents/baml';
-import type {
-  BamlClientOptions,
-  BamlFunctionSet,
-  BamlTurnResult,
-} from '@librechat/agents/baml';
 import {
+  BAML_PORT_VERSION,
   BamlNotRegisteredError,
   BamlPortVersionError,
   BamlToolNotBoundError,
   BamlTurnError,
   BamlUnsupportedError,
+  ChatBAML,
 } from '@librechat/agents/baml';
+import type {
+  BamlAnswerOutcome,
+  BamlCallMeta,
+  BamlClientOptions,
+  BamlDeclaredTool,
+  BamlFailureCode,
+  BamlFailureOutcome,
+  BamlFunctionSet,
+  BamlPortVersion,
+  BamlPromptInput,
+  BamlSelectedTool,
+  BamlTextChunk,
+  BamlToolCallsOutcome,
+  BamlToolFailure,
+  BamlTranscriptEntry,
+  BamlTranscriptRole,
+  BamlTranscriptToolCall,
+  BamlTurnChunk,
+  BamlTurnResult,
+} from '@librechat/agents/baml';
+
+type PublicBamlTypes = readonly [
+  BamlPortVersion,
+  BamlDeclaredTool,
+  BamlSelectedTool,
+  BamlFailureCode,
+  BamlToolFailure,
+  BamlCallMeta,
+  BamlTranscriptRole,
+  BamlTranscriptToolCall,
+  BamlTranscriptEntry,
+  BamlPromptInput,
+  BamlAnswerOutcome,
+  BamlTextChunk,
+  BamlToolCallsOutcome,
+  BamlFailureOutcome,
+  BamlTurnResult,
+  BamlTurnChunk,
+  BamlFunctionSet,
+  BamlClientOptions,
+];
+
+declare const publicBamlTypes: PublicBamlTypes;
+void publicBamlTypes;
 
 // A compile-only host adapter implementing the port — no `as` casts anywhere.
 const functions: BamlFunctionSet = {
@@ -29,8 +68,10 @@ const functions: BamlFunctionSet = {
 const options: BamlClientOptions = { functions };
 void options;
 
-// The public error classes ship from `./baml` at both type and value level.
+// Every public runtime value ships from `./baml`.
 void [
+  ChatBAML,
+  BAML_PORT_VERSION,
   BamlNotRegisteredError,
   BamlPortVersionError,
   BamlToolNotBoundError,
