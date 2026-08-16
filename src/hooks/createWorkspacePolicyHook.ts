@@ -156,8 +156,17 @@ function expandHomeRelative(token: string): string {
   if (token.startsWith('$HOME/')) return `${home}/${token.slice(6)}`;
   return token;
 }
-function extractCompileCheckPaths(input: Record<string, unknown>): string[] {
-  const command = typeof input.command === 'string' ? input.command : '';
+/**
+ * Extracts absolute/traversal path tokens directly from a shell command
+ * string. Exported (AF-hro9) so hosts gating other tools that also take a
+ * raw command string — e.g. Claude Agent SDK's built-in `Bash` tool, which
+ * has no dedicated path field of its own — can reuse this regex-hardened
+ * extraction instead of re-deriving an equivalent one. The name is kept
+ * as-is: the extraction itself operates on arbitrary command strings, not
+ * specifically "compile check" semantics, so it isn't misleading applied
+ * elsewhere.
+ */
+export function extractCompileCheckPaths(command: string): string[] {
   if (command === '') return [];
   const out: string[] = [];
   for (const match of command.matchAll(ABSOLUTE_PATH_TOKEN)) {
@@ -180,7 +189,8 @@ const DEFAULT_EXTRACTORS: Record<string, PathExtractor> = {
     typeof i.path === 'string' && i.path !== '' ? [i.path] : [],
   [Constants.LIST_DIRECTORY]: (i) =>
     typeof i.path === 'string' && i.path !== '' ? [i.path] : [],
-  [Constants.COMPILE_CHECK]: extractCompileCheckPaths,
+  [Constants.COMPILE_CHECK]: (i) =>
+    typeof i.command === 'string' ? extractCompileCheckPaths(i.command) : [],
 };
 
 function isInsideAnyRoot(absolutePath: string, roots: string[]): boolean {

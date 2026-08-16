@@ -36,7 +36,10 @@ export {
 } from './matchers';
 export { createToolPolicyHook } from './createToolPolicyHook';
 export type { ToolPolicyMode, ToolPolicyConfig } from './createToolPolicyHook';
-export { createWorkspacePolicyHook } from './createWorkspacePolicyHook';
+export {
+  createWorkspacePolicyHook,
+  extractCompileCheckPaths,
+} from './createWorkspacePolicyHook';
 export type {
   OutsideAccessPolicy,
   WorkspacePolicyConfig,

@@ -8,6 +8,7 @@ import type {
   PreToolUseHookOutput,
 } from '../types';
 import { createWorkspacePolicyHook } from '../createWorkspacePolicyHook';
+import { extractCompileCheckPaths } from '../index';
 
 function call(
   hook: HookCallback<'PreToolUse'>,
@@ -49,10 +50,7 @@ describe('createWorkspacePolicyHook', () => {
 
   it('allows in-workspace relative paths', async () => {
     const hook = createWorkspacePolicyHook({ root: workspace });
-    const out = await call(
-      hook,
-      makeInput('read_file', { path: 'src/x.ts' })
-    );
+    const out = await call(hook, makeInput('read_file', { path: 'src/x.ts' }));
     expect(out.decision).toBe('allow');
   });
 
@@ -226,10 +224,7 @@ describe('createWorkspacePolicyHook', () => {
         root: workspace,
         outsideRead: 'deny',
       });
-      const out = await call(
-        hook,
-        makeInput('read_file', { path: 'escape' })
-      );
+      const out = await call(hook, makeInput('read_file', { path: 'escape' }));
       expect(out.decision).toBe('deny');
       expect(out.reason).toContain('escape');
     });
@@ -401,5 +396,29 @@ describe('createWorkspacePolicyHook', () => {
       );
       expect(out.decision).toBe('allow');
     });
+  });
+});
+
+// AF-hro9: extractCompileCheckPaths is the right tool to gate Claude Agent
+// SDK's built-in Bash tool by path (silmari-chat's
+// CLAUDE_AGENT_SDK_PATH_EXTRACTORS.Bash), but it was previously a
+// module-private helper reachable only indirectly, via compile_check tool
+// inputs above. This exercises the public export directly.
+describe('extractCompileCheckPaths (public export, AF-hro9)', () => {
+  it('extracts an absolute path from a plain command', () => {
+    expect(extractCompileCheckPaths('cat /etc/passwd')).toEqual([
+      '/etc/passwd',
+    ]);
+  });
+
+  it('returns an empty array for a command with no absolute/traversal paths', () => {
+    expect(extractCompileCheckPaths('npx tsc --noEmit')).toEqual([]);
+  });
+
+  it('extracts multiple path tokens from one command', () => {
+    expect(extractCompileCheckPaths('cp /a/b.txt /c/d.txt')).toEqual([
+      '/a/b.txt',
+      '/c/d.txt',
+    ]);
   });
 });
