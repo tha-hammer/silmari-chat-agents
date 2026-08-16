@@ -1,10 +1,17 @@
-import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { join, dirname } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { AIMessageChunk } from '@langchain/core/messages';
 import { ChatGenerationChunk } from '@langchain/core/outputs';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import {
+  mkdirSync,
+  mkdtempSync,
+  existsSync,
+  cpSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
 import type { BaseChatModelCallOptions } from '@langchain/core/language_models/chat_models';
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import type { BaseMessage, MessageContent } from '@langchain/core/messages';
@@ -148,24 +155,95 @@ function textOfContent(content: MessageContent): string {
 }
 
 /**
+ * Default AAI template source: the deployed image's own baked config
+ * (`silmari-chat`'s `Dockerfile` `COPY`s `apps/cosmic-agent-core/v4.2.0/.claude`
+ * here and sets `CLAUDE_CONFIG_DIR` to it). Only used as a *seed source* for
+ * per-tenant directories (`aaiTemplateDir`'s default) — unrelated to
+ * `resolveDefaultConfigDir()`'s own fallback, which is about where the
+ * *non-multiTenant* path's subprocess reads/writes its config directly.
+ */
+const DEFAULT_AAI_TEMPLATE_DIR = '/home/node/.claude';
+
+/**
+ * Resolves the source directory `perTenantConfigDir` seeds each new
+ * tenant's `CLAUDE_CONFIG_DIR` from (AF-5f2j). AAI (`apps/cosmic-agent-core`
+ * — `CLAUDE.md`, skills, hooks, agents, commands) is core, mandatory
+ * infrastructure for every tenant's `claude` subprocess, not optional
+ * baseline content — so an unresolvable template source throws rather than
+ * silently seeding an empty directory (exactly the failure mode this fix
+ * exists to close).
+ */
+function resolveAaiTemplateDir(aaiTemplateDir: string | undefined): string {
+  if (aaiTemplateDir != null) {
+    return aaiTemplateDir;
+  }
+  if (existsSync(DEFAULT_AAI_TEMPLATE_DIR)) {
+    return DEFAULT_AAI_TEMPLATE_DIR;
+  }
+  throw new Error(
+    'ChatClaudeAgentSDK: multiTenant is true but no clientOptions.aaiTemplateDir ' +
+      `was supplied and the default (${DEFAULT_AAI_TEMPLATE_DIR}) does not exist. ` +
+      'AAI is mandatory for every tenant — refusing to create an unseeded ' +
+      'CLAUDE_CONFIG_DIR. Set clientOptions.aaiTemplateDir explicitly (e.g. to a ' +
+      'local fixture/checkout outside the deployed image), or leave multiTenant off.'
+  );
+}
+
+/**
  * Per-tenant `CLAUDE_CONFIG_DIR`, deterministically derived from the
  * resolved `cwd` — in a multi-tenant host, distinct tenants run under
  * distinct workspace roots, so this keeps one tenant's on-disk Claude
  * settings/session-cache isolated from another's without requiring a
  * separate host-supplied tenant-id field.
  *
- * Created (not just computed) before being handed to the subprocess: the
- * `claude` CLI does not create `CLAUDE_CONFIG_DIR` itself, so a first-ever
- * turn for a given tenant hash pointed the subprocess at a directory that
- * never existed — its session transcript had nowhere to persist, so a
- * second turn's `--resume <session-id>` always reported no conversation
- * found, since nothing was ever durably saved for it to find.
+ * Seeded (not just created) from `aaiTemplateDir` the first time a given
+ * tenant hash is seen: the `claude` CLI does not create `CLAUDE_CONFIG_DIR`
+ * itself, and an empty one has none of AAI's `CLAUDE.md`/skills/hooks/
+ * agents/commands — AAI is mandatory for every tenant, not optional
+ * baseline content (AF-5f2j).
+ *
+ * Concurrency-safe by construction, not by locking: builds the seeded
+ * contents in a sibling temp directory (`mkdtempSync` in the same parent,
+ * so the rename below is same-filesystem and therefore atomic), then
+ * `renameSync`s it into place. `finalDir` is observable in exactly two
+ * states — absent, or fully seeded — never partially copied, because
+ * `renameSync` only ever exposes a *complete* temp directory at the final
+ * path. Two concurrent first-requests for the same new tenant hash each
+ * build their own temp directory and race only on the final rename: the
+ * loser's rename either lands harmlessly over an already-identical
+ * directory or throws (caught below) because the winner already occupies
+ * `finalDir` — either way, nothing further to do, and no partial state is
+ * ever exposed to a reader. Idempotent by construction: once `finalDir`
+ * exists, later calls skip straight past seeding, so a tenant's own
+ * subsequently-written session/state files are never touched by this path.
  */
-function perTenantConfigDir(resolvedCwd: string): string {
+function perTenantConfigDir(
+  resolvedCwd: string,
+  aaiTemplateDir: string | undefined
+): string {
   const digest = createHash('sha256').update(resolvedCwd).digest('hex');
-  const dir = join(tmpdir(), 'claude-agent-sdk-tenants', digest.slice(0, 16));
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  const finalDir = join(
+    tmpdir(),
+    'claude-agent-sdk-tenants',
+    digest.slice(0, 16)
+  );
+  if (existsSync(finalDir)) {
+    return finalDir;
+  }
+  const templateDir = resolveAaiTemplateDir(aaiTemplateDir);
+  mkdirSync(dirname(finalDir), { recursive: true });
+  const tmpDir = mkdtempSync(join(dirname(finalDir), '.tmp-seed-'));
+  cpSync(templateDir, tmpDir, { recursive: true });
+  try {
+    renameSync(tmpDir, finalDir);
+  } catch {
+    // Lost the race to a concurrent first-request for the same tenant hash
+    // — finalDir already exists (fully seeded by the winner, since
+    // renameSync never exposes a partial copy). Clean up the losing copy
+    // rather than leaking a stray temp directory under sustained load.
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+  return finalDir;
 }
 
 /**
@@ -213,14 +291,17 @@ function resolveDefaultConfigDir(): string {
  * JSDoc). Omitting the spread here would silently drop `PATH`/`HOME`/
  * credentials from the subprocess (B16).
  */
-function multiTenantEnv(resolvedCwd: string): Record<string, string> {
+function multiTenantEnv(
+  resolvedCwd: string,
+  aaiTemplateDir: string | undefined
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value != null) {
       env[key] = value;
     }
   }
-  env.CLAUDE_CONFIG_DIR = perTenantConfigDir(resolvedCwd);
+  env.CLAUDE_CONFIG_DIR = perTenantConfigDir(resolvedCwd, aaiTemplateDir);
   env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
   return env;
 }
@@ -258,6 +339,7 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
   readonly model?: string;
   readonly workspace?: LocalWorkspaceConfig;
   readonly multiTenant?: boolean;
+  readonly aaiTemplateDir?: string;
   readonly sessionStore?: SessionStore;
   readonly resumeOverride?: string;
   readonly maxTurns?: number;
@@ -277,6 +359,7 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
     this.model = fields.model;
     this.workspace = fields.workspace;
     this.multiTenant = fields.multiTenant;
+    this.aaiTemplateDir = fields.aaiTemplateDir;
     this.sessionStore = fields.sessionStore;
     this.resumeOverride = fields.resume;
     this.maxTurns = fields.maxTurns;
@@ -418,7 +501,18 @@ export class ChatClaudeAgentSDK extends BaseChatModel<ChatClaudeAgentSDKCallOpti
           : { additionalDirectories }),
         ...(this.multiTenant !== true
           ? {}
-          : { settingSources: [], env: multiTenantEnv(resolvedCwd) }),
+          : {
+            // ['user','project','local'] explicitly, not [] and not
+            // omitted — [] is the SDK's "isolation mode" and drops
+            // CLAUDE.md and project-scoped settings even from a
+            // fully-seeded config dir (must include 'project' to load
+            // CLAUDE.md at all, per the SDK's own Options.settingSources
+            // doc); explicit-not-omitted keeps this stable regardless of
+            // what the SDK's own CLI default happens to be in a future
+            // version (AF-5f2j).
+            settingSources: ['user', 'project', 'local'],
+            env: multiTenantEnv(resolvedCwd, this.aaiTemplateDir),
+          }),
         ...(this.sessionStore == null
           ? {}
           : { sessionStore: this.sessionStore }),

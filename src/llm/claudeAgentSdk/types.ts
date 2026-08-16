@@ -66,11 +66,28 @@ export type ClaudeAgentSDKClientOptions = BaseChatModelParams & {
    */
   workspace?: LocalWorkspaceConfig;
   /**
-   * When true, applies per-tenant subprocess isolation: `settingSources: []`
-   * and an `env` derived from `process.env` plus `CLAUDE_CONFIG_DIR`
-   * (per-tenant, derived from `cwd`) and `CLAUDE_CODE_DISABLE_AUTO_MEMORY`.
+   * When true, applies per-tenant subprocess isolation: `settingSources:
+   * ['user', 'project', 'local']` and an `env` derived from `process.env`
+   * plus `CLAUDE_CONFIG_DIR` (per-tenant, derived from `cwd`, seeded from
+   * {@link aaiTemplateDir} on first creation — see that field) and
+   * `CLAUDE_CODE_DISABLE_AUTO_MEMORY`.
    */
   multiTenant?: boolean;
+  /**
+   * Absolute path to a directory whose contents are copied into a tenant's
+   * `CLAUDE_CONFIG_DIR` the first time it's created (AF-5f2j) — e.g. a baked
+   * `CLAUDE.md`/skills/hooks/agents/commands package a host wants every
+   * tenant's subprocess to have, not just the default (empty) directory
+   * `multiTenant: true` used to produce.
+   *
+   * Only consulted when `multiTenant` is `true`. Default resolution when
+   * unset: `/home/node/.claude` if that path exists on disk, else
+   * `perTenantConfigDir()` throws rather than silently seeding nothing — an
+   * unseeded tenant directory is exactly the failure mode this field exists
+   * to close, so a missing/misconfigured template source must fail loudly
+   * at first-request time, not degrade to the old silent-empty behavior.
+   */
+  aaiTemplateDir?: string;
   /** Thin pass-through to the SDK's own `Options.sessionStore`. */
   sessionStore?: SessionStore;
   /**

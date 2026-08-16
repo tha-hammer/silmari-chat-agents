@@ -1,8 +1,16 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { HumanMessage } from '@langchain/core/messages';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { describe, expect, it, jest } from '@jest/globals';
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+} from 'node:fs';
 import type { FakeQueryCall } from './fakeQuery';
 import { ClaudeAgentSDKSessionResumeError } from '@/llm/claudeAgentSdk/errors';
 import { ChatClaudeAgentSDK } from '@/llm/claudeAgentSdk/ChatClaudeAgentSDK';
@@ -63,18 +71,29 @@ describe('B15 — cwd and additionalDirectories reuse the local coding engine\'s
 });
 
 describe('B16 — multi-tenant isolation options apply when configured, and env is spread correctly', () => {
-  it('multiTenant: true sets settingSources: [] and env spreading process.env', async () => {
+  it('multiTenant: true sets settingSources: [\'user\',\'project\',\'local\'] and env spreading process.env', async () => {
     const calls: FakeQueryCall[] = [];
     const queryFn = fakeQuery([[resultSuccess({ result: 'hi' })]], calls);
+    const template = mkdtempSync(join(tmpdir(), 'claude-aai-template-'));
     const model = new ChatClaudeAgentSDK({
       cwd: '/tmp',
       multiTenant: true,
+      aaiTemplateDir: template,
       queryFn,
     });
 
     await model.invoke([new HumanMessage('hi')]);
 
-    expect(calls[0].options?.settingSources).toEqual([]);
+    // AF-5f2j: [] (the SDK's "isolation mode") silently drops CLAUDE.md and
+    // project-scoped settings even from a fully-seeded config dir — must
+    // include 'project' at minimum, pinned to the full explicit set so
+    // intent is visible in code rather than relying on the SDK's own CLI
+    // default.
+    expect(calls[0].options?.settingSources).toEqual([
+      'user',
+      'project',
+      'local',
+    ]);
     const env = calls[0].options?.env;
     expect(env).toBeDefined();
     expect(env?.PATH).toBe(process.env.PATH);
@@ -162,6 +181,139 @@ describe('B16 — multi-tenant isolation options apply when configured, and env 
         process.env.CLAUDE_CONFIG_DIR = originalEnv;
       }
     }
+  });
+});
+
+describe('AF-5f2j — multiTenant seeds AAI (aaiTemplateDir) into each per-tenant CLAUDE_CONFIG_DIR', () => {
+  function tenantConfigDirFor(resolvedCwd: string): string {
+    const digest = createHash('sha256').update(resolvedCwd).digest('hex');
+    return join(tmpdir(), 'claude-agent-sdk-tenants', digest.slice(0, 16));
+  }
+
+  function freshCwd(): string {
+    // Each test gets a distinct resolvedCwd so it hashes to a distinct,
+    // never-before-seeded tenant directory — perTenantConfigDir's tenant
+    // hash is a pure function of resolvedCwd, not a fresh id per test run.
+    return mkdtempSync(join(tmpdir(), 'claude-aai-cwd-'));
+  }
+
+  function makeAaiTemplate(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-aai-template-'));
+    writeFileSync(join(dir, 'CLAUDE.md'), '# AAI template content\n');
+    mkdirSync(join(dir, 'skills'), { recursive: true });
+    writeFileSync(join(dir, 'skills', 'foo.md'), '# foo skill\n');
+    return dir;
+  }
+
+  it('seeds CLAUDE.md and skills/ from aaiTemplateDir into a freshly-created tenant dir', async () => {
+    const cwd = freshCwd();
+    const template = makeAaiTemplate();
+    const calls: FakeQueryCall[] = [];
+    const queryFn = fakeQuery([[resultSuccess({ result: 'hi' })]], calls);
+    const model = new ChatClaudeAgentSDK({
+      cwd,
+      multiTenant: true,
+      aaiTemplateDir: template,
+      queryFn,
+    });
+
+    await model.invoke([new HumanMessage('hi')]);
+
+    const tenantDir = tenantConfigDirFor(cwd);
+    expect(calls[0].options?.env?.CLAUDE_CONFIG_DIR).toBe(tenantDir);
+    expect(readFileSync(join(tenantDir, 'CLAUDE.md'), 'utf8')).toBe(
+      '# AAI template content\n'
+    );
+    expect(readFileSync(join(tenantDir, 'skills', 'foo.md'), 'utf8')).toBe(
+      '# foo skill\n'
+    );
+  });
+
+  it('is idempotent: a second call does not re-seed or touch a file the tenant itself wrote', async () => {
+    const cwd = freshCwd();
+    const template = makeAaiTemplate();
+    const calls: FakeQueryCall[] = [];
+    const queryFn = fakeQuery(
+      [
+        [resultSuccess({ result: 'first' })],
+        [resultSuccess({ result: 'second' })],
+      ],
+      calls
+    );
+    const model = new ChatClaudeAgentSDK({
+      cwd,
+      multiTenant: true,
+      aaiTemplateDir: template,
+      queryFn,
+    });
+
+    await model.invoke([new HumanMessage('hi')]);
+    const tenantDir = tenantConfigDirFor(cwd);
+    const tenantWrittenFile = join(tenantDir, 'projects', 'session-state.json');
+    mkdirSync(join(tenantDir, 'projects'), { recursive: true });
+    writeFileSync(tenantWrittenFile, '{"sessionId":"abc"}');
+
+    await model.invoke([new HumanMessage('again')]);
+
+    // Not clobbered by a second seed pass.
+    expect(readFileSync(tenantWrittenFile, 'utf8')).toBe('{"sessionId":"abc"}');
+    // Template content is still there too (never needed re-seeding).
+    expect(readFileSync(join(tenantDir, 'CLAUDE.md'), 'utf8')).toBe(
+      '# AAI template content\n'
+    );
+  });
+
+  it('throws rather than silently seeding nothing when no aaiTemplateDir is set and the default (/home/node/.claude) does not exist', async () => {
+    const cwd = freshCwd();
+    const calls: FakeQueryCall[] = [];
+    const queryFn = fakeQuery([[resultSuccess({ result: 'hi' })]], calls);
+    const model = new ChatClaudeAgentSDK({
+      cwd,
+      multiTenant: true,
+      // no aaiTemplateDir — and this dev/test machine has no
+      // /home/node/.claude, so the default-resolution path must fail loud.
+      queryFn,
+    });
+
+    await expect(model.invoke([new HumanMessage('hi')])).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('two concurrent first-requests for the same new tenant both succeed with a fully-seeded, non-corrupted directory', async () => {
+    const cwd = freshCwd();
+    const template = makeAaiTemplate();
+    const calls1: FakeQueryCall[] = [];
+    const calls2: FakeQueryCall[] = [];
+    const model1 = new ChatClaudeAgentSDK({
+      cwd,
+      multiTenant: true,
+      aaiTemplateDir: template,
+      queryFn: fakeQuery([[resultSuccess({ result: 'a' })]], calls1),
+    });
+    const model2 = new ChatClaudeAgentSDK({
+      cwd,
+      multiTenant: true,
+      aaiTemplateDir: template,
+      queryFn: fakeQuery([[resultSuccess({ result: 'b' })]], calls2),
+    });
+
+    await Promise.all([
+      model1.invoke([new HumanMessage('hi')]),
+      model2.invoke([new HumanMessage('hi')]),
+    ]);
+
+    const tenantDir = tenantConfigDirFor(cwd);
+    expect(calls1).toHaveLength(1);
+    expect(calls2).toHaveLength(1);
+    // The end state is never partially copied — either absent or fully
+    // seeded (renameSync only ever exposes a complete temp dir at the
+    // final path), regardless of which of the two requests' rename won.
+    expect(readFileSync(join(tenantDir, 'CLAUDE.md'), 'utf8')).toBe(
+      '# AAI template content\n'
+    );
+    expect(readFileSync(join(tenantDir, 'skills', 'foo.md'), 'utf8')).toBe(
+      '# foo skill\n'
+    );
   });
 });
 
