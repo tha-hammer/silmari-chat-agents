@@ -145,22 +145,21 @@ for (const [label, file] of nodeConsumers) {
   }
 }
 
-// 6) Type consumers cover the two resolution modes this library actually
-//    supports, proving both the `exports.types` condition and the `typesVersions`
-//    mirror for `./baml`:
+// 6) Type consumers cover the published package's complete resolution matrix,
+//    proving the `exports.types` condition, the `typesVersions` mirror for
+//    `./baml`, and all 14 public export subpaths:
 //      - bundler → reads exports.types (Vite/webpack/esbuild/Bun/Next; and the
 //                  repo's own tsconfig uses moduleResolution: "bundler").
 //      - node10  → reads typesVersions (classic resolution).
-//    Pure `nodenext` .d.ts consumption is deliberately NOT a gate: the library
-//    emits extensionless relative re-exports in its barrel declarations (e.g.
-//    `export * from './types'`) plus `@/` path aliases, which nodenext rejects.
-//    This is LIBRARY-WIDE and pre-existing — `@librechat/agents/langchain` fails
-//    nodenext identically to `./baml` — so B19 does not hold this one entry to a
-//    standard no entry in the package meets. Making the whole package
-//    nodenext-clean is tracked separately.
+//      - NodeNext/Node16 → read exports.types with Node ESM declaration rules;
+//                          both compile the all-exports matrix and named BAML
+//                          contract while isolating third-party declaration
+//                          incompatibilities through skipLibCheck.
 const typeChecks = [
   ['TYPE bundler (BamlClientOptions + errors via exports.types)', 'tsconfig.bundler.json'],
   ['TYPE node10  (BamlClientOptions + errors via typesVersions)', 'tsconfig.node10.json'],
+  ['TYPE NodeNext (all 14 exports + named BAML contract)', 'tsconfig.nodenext.json'],
+  ['TYPE Node16   (all 14 exports + named BAML contract)', 'tsconfig.node16.json'],
 ];
 for (const [label, tsconfig] of typeChecks) {
   try {

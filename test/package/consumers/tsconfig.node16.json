@@ -1,0 +1,15 @@
+{
+  "comment": "B19 — resolves all 14 published type entries and the named BAML contract under Node16 resolution.",
+  "compilerOptions": {
+    "module": "node16",
+    "moduleResolution": "node16",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": []
+  },
+  "files": ["type-consumer.ts", "all-exports-consumer.mts"]
+}

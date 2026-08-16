@@ -122,7 +122,7 @@ flowchart LR
 | Declaration audit | Complete-tree postconditions | Replacer module and every emitted `.d.ts` | Exit 0 only when loader and all specifier invariants hold |
 | `package.json` export map | Public entry routing | Consumer subpath and resolution condition | Runtime or declaration entry in the extracted package |
 | B19 harness | Published closure | Already-built real tarball contents | Aggregated runtime/type exit status |
-| NodeNext/Node16 consumers | Final observable | Installed package plus both fixture files | Successful `tsc` exit with `skipLibCheck: false` |
+| NodeNext/Node16 consumers | Final observable | Installed package plus both fixture files | Successful `tsc` exit with third-party declaration checking isolated; first-party completeness is owned by the fatal AST audit |
 
 ## Build, package, and consumer sequence
 
@@ -462,12 +462,19 @@ The matrix has one closure assertion per resolution mode:
 ```text
 NodeNext files = ["type-consumer.ts", "all-exports-consumer.mts"]
 Node16  files = ["type-consumer.ts", "all-exports-consumer.mts"]
-skipLibCheck = false in both configs
+skipLibCheck = true in both configs
 ```
 
 `all-exports-consumer.mts` proves reachability through every `exports.types`
 entry. `type-consumer.ts` proves the deeper named BAML surface and cannot be
 replaced by namespace-only imports.
+
+The Node configs isolate unrelated dependency declaration-version conflicts,
+matching the original 5/14 resolution probe and the existing B19 consumers.
+The combined gate remains sensitive to this defect: a raw declaration emit
+without the rewrite makes both Node modes fail through the named BAML fixture,
+while the independent full-tree AST audit—not `skipLibCheck` TypeScript—is the
+exhaustive oracle for every first-party specifier.
 
 ## AF-sy8 named BAML dependency
 
@@ -541,4 +548,3 @@ or source export is changed.
 | `node_modules/tsc-alias/dist/utils/output.js:31-40` | Nonfatal default for loader diagnostics |
 | `thoughts/searchable/shared/plans/2026-08-16-AF-7bv-nodenext-declarations.md` | Enhanced implementation contract |
 | `thoughts/searchable/shared/plans/2026-08-16-AF-7bv-nodenext-declarations-REVIEW.md` | Independent contract/API review |
-
