@@ -9,6 +9,29 @@ import type {
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AnthropicMessageResponse } from '@/llm/anthropic/types';
 import { anthropicResponseToChatMessages } from '@/llm/anthropic/utils/message_outputs';
+import { preserveClaudeAgentSDKUsageMetadata } from '@/llm/claudeAgentSdk/usage';
+
+export class ClaudeAgentSDKMessageChunk extends AIMessageChunk {
+  override concat(chunk: AIMessageChunk): this {
+    const combined = super.concat(chunk);
+    const usageMetadata = preserveClaudeAgentSDKUsageMetadata(
+      combined.usage_metadata,
+      this.usage_metadata,
+      chunk.usage_metadata
+    );
+    return new ClaudeAgentSDKMessageChunk({
+      content: combined.content,
+      additional_kwargs: combined.additional_kwargs,
+      response_metadata: combined.response_metadata,
+      id: combined.id,
+      name: combined.name,
+      tool_calls: combined.tool_calls,
+      invalid_tool_calls: combined.invalid_tool_calls,
+      tool_call_chunks: combined.tool_call_chunks,
+      usage_metadata: usageMetadata,
+    }) as this;
+  }
+}
 
 /**
  * Content-block types that represent the main loop's own commentary/output.
@@ -95,7 +118,7 @@ export function mainLoopChunkFromAssistantMessage(
     {}
   );
 
-  return new AIMessageChunk({
+  return new ClaudeAgentSDKMessageChunk({
     content: generation.message.content,
     response_metadata: generation.message.response_metadata,
   });

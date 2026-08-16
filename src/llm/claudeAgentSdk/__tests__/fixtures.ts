@@ -78,7 +78,8 @@ function nonNullableUsage(): NonNullableUsage {
 }
 
 function betaMessage(
-  content: Anthropic.Beta.BetaContentBlock[]
+  content: Anthropic.Beta.BetaContentBlock[],
+  model = 'claude-sonnet-4-5'
 ): Anthropic.Beta.BetaMessage {
   return {
     id: 'msg_fake',
@@ -86,7 +87,7 @@ function betaMessage(
     content,
     context_management: null,
     diagnostics: null,
-    model: 'claude-sonnet-4-5',
+    model,
     role: 'assistant',
     stop_details: null,
     stop_reason: 'end_turn',
@@ -98,12 +99,13 @@ function betaMessage(
 
 export function assistantMessage(fields: {
   content: Anthropic.Beta.BetaContentBlock[];
+  model?: string;
   parentToolUseId?: string | null;
   sessionId?: string;
 }): SDKAssistantMessage {
   return {
     type: 'assistant',
-    message: betaMessage(fields.content),
+    message: betaMessage(fields.content, fields.model),
     parent_tool_use_id: fields.parentToolUseId ?? null,
     uuid: NIL_UUID,
     session_id: fields.sessionId ?? 's1',
