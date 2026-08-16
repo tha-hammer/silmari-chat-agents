@@ -130,6 +130,39 @@ describe('B16 — multi-tenant isolation options apply when configured, and env 
       rmSync(tmpBase, { recursive: true, force: true });
     }
   });
+
+  it('falls back to a tmpdir-based directory when homedir() throws (arbitrary-uid container, no /etc/passwd entry)', async () => {
+    // No CLAUDE_CONFIG_DIR set: forces the homedir()-based default path.
+    // homedir() throws on POSIX when $HOME is unset and the running uid has
+    // no /etc/passwd entry — a real condition in containers that run as an
+    // arbitrary host uid (e.g. Docker Compose's user: "${UID}:${GID}").
+    const originalEnv = process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.CLAUDE_CONFIG_DIR;
+    const homedirSpy = jest
+      .spyOn(require('node:os'), 'homedir')
+      .mockImplementation(() => {
+        throw new Error('ENOENT: no matching passwd entry for uid');
+      });
+    try {
+      const calls: FakeQueryCall[] = [];
+      const queryFn = fakeQuery([[resultSuccess({ result: 'hi' })]], calls);
+      const model = new ChatClaudeAgentSDK({ cwd: '/tmp', queryFn });
+
+      await expect(
+        model.invoke([new HumanMessage('hi')])
+      ).resolves.toBeDefined();
+
+      const fallbackDir = join(tmpdir(), 'claude-agent-sdk-home-fallback');
+      expect(existsSync(fallbackDir)).toBe(true);
+    } finally {
+      homedirSpy.mockRestore();
+      if (originalEnv === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = originalEnv;
+      }
+    }
+  });
 });
 
 describe('B17 — sessionStore, an explicit resume override, and maxTurns are thin pass-throughs', () => {

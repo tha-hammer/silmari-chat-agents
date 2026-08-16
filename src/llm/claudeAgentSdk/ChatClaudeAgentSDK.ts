@@ -184,10 +184,27 @@ function perTenantConfigDir(resolvedCwd: string): string {
  * and the CLI does not create it — so this ensures whichever directory the
  * subprocess is ABOUT to use (env override or CLI default) actually exists,
  * regardless of `multiTenant`, before every `query()` call.
+ *
+ * `homedir()` itself is not trustworthy in every deployment: on POSIX it
+ * falls through to a native passwd-file lookup keyed by uid whenever `$HOME`
+ * is unset, and a container running as an arbitrary host uid (common when a
+ * deployment overrides the image's built-in user, e.g. Docker Compose's
+ * `user: "${UID}:${GID}"`) has no `/etc/passwd` entry for that uid — the
+ * lookup throws. Falls back to a `tmpdir()`-based directory (never uid/passwd
+ * -dependent — same reasoning as `perTenantConfigDir`'s own choice of
+ * `tmpdir()`) rather than letting that exception surface mid-turn.
  */
 function ensureClaudeConfigDirExists(): void {
-  const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+  const dir = process.env.CLAUDE_CONFIG_DIR ?? resolveDefaultConfigDir();
   mkdirSync(dir, { recursive: true });
+}
+
+function resolveDefaultConfigDir(): string {
+  try {
+    return join(homedir(), '.claude');
+  } catch {
+    return join(tmpdir(), 'claude-agent-sdk-home-fallback');
+  }
 }
 
 /**
